@@ -17,12 +17,20 @@ from utils.sh_utils import eval_sh
 from time import time as get_time
 from torch.profiler import profile, ProfilerActivity, record_function
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None, stage="fine", cam_type=None):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None, stage="fine", cam_type=None, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
     """
     Render the scene. 
     
     Background tensor (bg_color) must be on GPU!
     """
+    
+    # for inertia test
+    if (static_mask is None):
+        static_mask = torch.zeros(pc.get_xyz.shape[0], 1, device="cpu")
+        ref_pos_bias = torch.zeros(pc.get_xyz.shape[0], 3, device="cpu")
+        ref_scale_bias = torch.zeros(pc.get_xyz.shape[0], 3, device="cpu")
+        ref_rot_bias = torch.zeros(pc.get_xyz.shape[0], 4, device="cpu")
+    
     torch.cuda.synchronize()
     sub_time1 = get_time()
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
@@ -90,9 +98,13 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         # means3D_deform, scales_deform, rotations_deform, opacity_deform = pc._deformation(means3D[deformation_point], scales[deformation_point], 
         #                                                                  rotations[deformation_point], opacity[deformation_point],
         #                                                                  time[deformation_point])
-        means3D_final, scales_final, rotations_final, opacity_final, shs_final = pc._deformation(means3D, scales, 
+        means3D_final, scales_final, rotations_final, opacity_final, shs_final, pos_bias, scale_bias, rot_bias = pc._deformation(means3D, scales, 
                                                                 rotations, opacity, shs,
-                                                                time)
+                                                                time, frame_id=frame_id,
+                                                                static_mask=static_mask, 
+                                                                ref_pos_bias=ref_pos_bias,
+                                                                ref_scale_bias=ref_scale_bias,
+                                                                ref_rot_bias=ref_rot_bias)
             
     else:
         raise NotImplementedError
@@ -147,5 +159,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
             "radii": radii,
-            "depth":depth}
+            "depth":depth,
+            "pos_bias": pos_bias,
+            "scale_bias": scale_bias,
+            "rot_bias": rot_bias,
+            "time_stampe": time[0]}
 

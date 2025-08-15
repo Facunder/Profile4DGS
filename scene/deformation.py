@@ -89,23 +89,52 @@ class Deformation(nn.Module):
     @property
     def get_empty_ratio(self):
         return self.ratio
-    def forward(self, rays_pts_emb, scales_emb=None, rotations_emb=None, opacity = None,shs_emb=None, time_feature=None, time_emb=None):
+    def forward(self, rays_pts_emb, scales_emb=None, rotations_emb=None, opacity = None,shs_emb=None, time_feature=None, time_emb=None, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
         if time_emb is None:
             return self.forward_static(rays_pts_emb[:,:3])
         else:
-            return self.forward_dynamic(rays_pts_emb, scales_emb, rotations_emb, opacity, shs_emb, time_feature, time_emb)
+            return self.forward_dynamic(rays_pts_emb, scales_emb, rotations_emb, opacity, shs_emb, time_feature, time_emb, frame_id, static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias)
 
     def forward_static(self, rays_pts_emb):
         grid_feature = self.grid(rays_pts_emb[:,:3])
         dx = self.static_mlp(grid_feature)
         return rays_pts_emb[:, :3] + dx
-    def forward_dynamic(self,rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb):
+    def forward_dynamic(self,rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
+        if frame_id % 3 == 0:
+            key_frame_flag = True
+        else:
+            key_frame_flag = False
         torch.cuda.synchronize()
         time1 = get_time()
-        hidden = self.query_time(rays_pts_emb, scales_emb, rotations_emb, time_feature, time_emb)
+        dx = torch.zeros_like(rays_pts_emb[:,:3])
+        ds = torch.zeros_like(scales_emb[:,:3])
+        dr = torch.zeros_like(rotations_emb[:,:4])
+        static_mask_view = static_mask.view(-1).bool()
+        if key_frame_flag != True:
+            dx = ref_pos_bias
+            ds = ref_scale_bias
+            dr = ref_rot_bias
+            rays_pts_emb_dynamic = rays_pts_emb[static_mask_view==0]
+            scales_emb_dynamic = scales_emb[static_mask_view==0]
+            rotations_emb_dynamic = rotations_emb[static_mask_view==0]
+            time_emb_dynamic = time_emb[static_mask_view==0]
+        else:
+            rays_pts_emb_dynamic = rays_pts_emb
+            scales_emb_dynamic = scales_emb
+            rotations_emb_dynamic = rotations_emb
+            time_emb_dynamic = time_emb
+        torch.cuda.synchronize()
+        time1_1 = get_time()
+        print("mask time: ",time1_1-time1)
+        
         torch.cuda.synchronize()
         time2 = get_time()
-        print("query time",time2-time1)
+        hidden = self.query_time(rays_pts_emb_dynamic, scales_emb_dynamic, rotations_emb_dynamic, time_feature, time_emb_dynamic)
+        # print("hidden feature shape: ", hidden.shape)
+        torch.cuda.synchronize()
+        time2_1 = get_time()
+        print("hexplane time: ",time2_1-time2)
+        
         torch.cuda.synchronize()
         time3 = get_time()
         hidden = self.feature_out(hidden)  
@@ -119,23 +148,31 @@ class Deformation(nn.Module):
         if self.args.no_dx:
             pts = rays_pts_emb[:,:3]
         else:
-            dx = self.pos_deform(hidden)
-            pts = torch.zeros_like(rays_pts_emb[:,:3])
+            if key_frame_flag != True:
+                dx[static_mask_view==0] = self.pos_deform(hidden)
+            else:
+                dx = self.pos_deform(hidden)
+            # pts = torch.zeros_like(rays_pts_emb[:,:3])
             pts = rays_pts_emb[:,:3]*mask + dx
+            
         if self.args.no_ds :
             scales = scales_emb[:,:3]
         else:
-            ds = self.scales_deform(hidden)
-
-            scales = torch.zeros_like(scales_emb[:,:3])
+            if key_frame_flag != True:
+                ds[static_mask_view==0] = self.scales_deform(hidden)
+            else:
+                ds = self.scales_deform(hidden)
+            # scales = torch.zeros_like(scales_emb[:,:3])
             scales = scales_emb[:,:3]*mask + ds
             
         if self.args.no_dr :
             rotations = rotations_emb[:,:4]
         else:
-            dr = self.rotations_deform(hidden)
-
-            rotations = torch.zeros_like(rotations_emb[:,:4])
+            if key_frame_flag != True:
+                dr[static_mask_view==0] = self.rotations_deform(hidden)
+            else:
+                dr = self.rotations_deform(hidden)
+            # rotations = torch.zeros_like(rotations_emb[:,:4])
             if self.args.apply_rotation:
                 rotations = batch_quaternion_multiply(rotations_emb, dr)
             else:
@@ -159,7 +196,8 @@ class Deformation(nn.Module):
         torch.cuda.synchronize()
         time4 = get_time()
         print("mlp time",time4-time3)
-        return pts, scales, rotations, opacity, shs
+        
+        return pts, scales, rotations, opacity, shs, dx.cpu(), ds.cpu(), dr.cpu()
     def get_mlp_parameters(self):
         parameter_list = []
         for name, param in self.named_parameters():
@@ -196,8 +234,8 @@ class deform_network(nn.Module):
         self.apply(initialize_weights)
         # print(self)
 
-    def forward(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None):
-        return self.forward_dynamic(point, scales, rotations, opacity, shs, times_sel)
+    def forward(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
+        return self.forward_dynamic(point, scales, rotations, opacity, shs, times_sel, frame_id, static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias)
     @property
     def get_aabb(self):
         
@@ -209,21 +247,22 @@ class deform_network(nn.Module):
     def forward_static(self, points):
         points = self.deformation_net(points)
         return points
-    def forward_dynamic(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None):
+    def forward_dynamic(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
         # times_emb = poc_fre(times_sel, self.time_poc)
         point_emb = poc_fre(point,self.pos_poc)
         scales_emb = poc_fre(scales,self.rotation_scaling_poc)
         rotations_emb = poc_fre(rotations,self.rotation_scaling_poc)
         # time_emb = poc_fre(times_sel, self.time_poc)
         # times_feature = self.timenet(time_emb)
-        means3D, scales, rotations, opacity, shs = self.deformation_net( point_emb,
-                                                  scales_emb,
+        means3D, scales, rotations, opacity, shs, cur_dx, cur_ds, cur_dr = self.deformation_net( point_emb,
+                                                scales_emb,
                                                 rotations_emb,
                                                 opacity,
                                                 shs,
                                                 None,
-                                                times_sel)
-        return means3D, scales, rotations, opacity, shs
+                                                times_sel, 
+                                                frame_id, static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias)
+        return means3D, scales, rotations, opacity, shs, cur_dx, cur_ds, cur_dr
     def get_mlp_parameters(self):
         return self.deformation_net.get_mlp_parameters() + list(self.timenet.parameters())
     def get_grid_parameters(self):
