@@ -100,15 +100,35 @@ class Deformation(nn.Module):
         dx = self.static_mlp(grid_feature)
         return rays_pts_emb[:, :3] + dx
     def forward_dynamic(self,rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb):
+        point_num = rays_pts_emb.shape[0]
         torch.cuda.synchronize()
         time1 = get_time()
         hidden = self.query_time(rays_pts_emb, scales_emb, rotations_emb, time_feature, time_emb)
         torch.cuda.synchronize()
         time2 = get_time()
         print("query time",time2-time1)
+        
+        # ignore last cluster
+        num_groups = point_num // 4
+        hidden_grouped = hidden[:num_groups*4].view(num_groups, 4, hidden.shape[1])
+        first_row = hidden_grouped[:, 0:1, :]  # (num_groups, 1, 64)
+        others = hidden_grouped[:, 1:, :]      # (num_groups, 3, 64)
+        mse = ((others - first_row) ** 2).mean(dim=2)  # (num_groups, 3)
+        rigidity_mask = (mse < 0.0001).all(dim=1)  # (num_groups,)
+        rigidity_cluster_num = rigidity_mask.sum()
+        non_rigidity_cluster_num = num_groups - rigidity_cluster_num
+        print(rigidity_mask.shape)
+        print(f"Rigidity Cluster: {rigidity_cluster_num}/{num_groups}")   
+        ancher_hidden = hidden_grouped[rigidity_mask, 0, :]
+        print(ancher_hidden.shape)
+        common_hidden = hidden_grouped[~rigidity_mask].reshape(-1, hidden.shape[1])
+        print(common_hidden.shape)
+        common_hidden = torch.cat([common_hidden, hidden[num_groups*4:]], dim=0)
+
         torch.cuda.synchronize()
         time3 = get_time()
-        hidden = self.feature_out(hidden)  
+        ancher_hidden = self.feature_out(ancher_hidden)
+        common_hidden = self.feature_out(common_hidden)
         if self.args.static_mlp:
             mask = self.static_mlp(hidden)
         elif self.args.empty_voxel:
@@ -116,25 +136,46 @@ class Deformation(nn.Module):
         else:
             mask = torch.ones_like(opacity_emb[:,0]).unsqueeze(-1)
         # breakpoint()
+        
+        group_indices = torch.arange(num_groups).unsqueeze(1) * 4 + torch.arange(4)   # [num_groups, 4]
+        group_indices = group_indices.to(rigidity_mask.device)
+        common_point_indices = group_indices[~rigidity_mask].reshape(-1)  # [num_common_points]
+        rigidity_flat_indices = group_indices[rigidity_mask] .reshape(-1)
+        
         if self.args.no_dx:
             pts = rays_pts_emb[:,:3]
         else:
-            dx = self.pos_deform(hidden)
+            ancher_dx = self.pos_deform(ancher_hidden)
+            common_dx = self.pos_deform(common_hidden)
+            dx = torch.zeros_like(rays_pts_emb[:,:3])
+            dx[rigidity_flat_indices] = ancher_dx.repeat_interleave(4, dim=0)
+            dx[common_point_indices] = common_dx[:non_rigidity_cluster_num * 4]
+            dx[num_groups*4:] = common_dx[non_rigidity_cluster_num * 4:]
             pts = torch.zeros_like(rays_pts_emb[:,:3])
             pts = rays_pts_emb[:,:3]*mask + dx
         if self.args.no_ds :
             scales = scales_emb[:,:3]
         else:
-            ds = self.scales_deform(hidden)
-
+            # ds = self.scales_deform(hidden)
+            ancher_ds = self.scales_deform(ancher_hidden)
+            common_ds = self.scales_deform(common_hidden)
+            ds = torch.zeros_like(scales_emb[:,:3])
+            ds[rigidity_flat_indices] = ancher_ds.repeat_interleave(4, dim=0)
+            ds[common_point_indices] = common_ds[:non_rigidity_cluster_num * 4]
+            ds[num_groups*4:] = common_ds[non_rigidity_cluster_num * 4:]
             scales = torch.zeros_like(scales_emb[:,:3])
             scales = scales_emb[:,:3]*mask + ds
             
         if self.args.no_dr :
             rotations = rotations_emb[:,:4]
         else:
-            dr = self.rotations_deform(hidden)
-
+            # dr = self.rotations_deform(hidden)
+            ancher_dr = self.rotations_deform(ancher_hidden)
+            common_dr = self.rotations_deform(common_hidden)
+            dr = torch.zeros_like(rotations_emb[:,:4])
+            dr[rigidity_flat_indices] = ancher_dr.repeat_interleave(4, dim=0)
+            dr[common_point_indices] = common_dr[:non_rigidity_cluster_num * 4]
+            dr[num_groups*4:] = common_dr[non_rigidity_cluster_num * 4:]
             rotations = torch.zeros_like(rotations_emb[:,:4])
             if self.args.apply_rotation:
                 rotations = batch_quaternion_multiply(rotations_emb, dr)
