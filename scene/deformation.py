@@ -89,35 +89,43 @@ class Deformation(nn.Module):
     @property
     def get_empty_ratio(self):
         return self.ratio
-    def forward(self, rays_pts_emb, scales_emb=None, rotations_emb=None, opacity = None,shs_emb=None, time_feature=None, time_emb=None, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
+    def forward(self, rays_pts_emb, scales_emb=None, rotations_emb=None, opacity = None,shs_emb=None, time_feature=None, time_emb=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
         if time_emb is None:
             return self.forward_static(rays_pts_emb[:,:3])
         else:
-            return self.forward_dynamic(rays_pts_emb, scales_emb, rotations_emb, opacity, shs_emb, time_feature, time_emb, frame_id, static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias)
+            return self.forward_dynamic(rays_pts_emb, scales_emb, rotations_emb, opacity, shs_emb, time_feature, time_emb, frame_id, group_static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias)
 
     def forward_static(self, rays_pts_emb):
         grid_feature = self.grid(rays_pts_emb[:,:3])
         dx = self.static_mlp(grid_feature)
         return rays_pts_emb[:, :3] + dx
-    def forward_dynamic(self,rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
+    def forward_dynamic(self,rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
         if frame_id % 3 == 0:
             key_frame_flag = True
         else:
             key_frame_flag = False
+        point_nums = rays_pts_emb.shape[0]
+        group_nums = point_nums // 4
+        dynamic_group_nums = int(group_nums - group_static_mask.sum().item())
+        print(f"dynamic cluster: {dynamic_group_nums}/{group_nums}")
         torch.cuda.synchronize()
         time1 = get_time()
         dx = torch.zeros_like(rays_pts_emb[:,:3])
         ds = torch.zeros_like(scales_emb[:,:3])
         dr = torch.zeros_like(rotations_emb[:,:4])
-        static_mask_view = static_mask.view(-1).bool()
+        group_static_mask_view = group_static_mask.view(-1).bool()
         if key_frame_flag != True:
             dx = ref_pos_bias
             ds = ref_scale_bias
             dr = ref_rot_bias
-            rays_pts_emb_dynamic = rays_pts_emb[static_mask_view==0]
-            scales_emb_dynamic = scales_emb[static_mask_view==0]
-            rotations_emb_dynamic = rotations_emb[static_mask_view==0]
-            time_emb_dynamic = time_emb[static_mask_view==0]
+            rays_pts_emb_dynamic = rays_pts_emb[:group_nums*4].reshape(group_nums, 4, -1)[group_static_mask_view==0].reshape(-1, rays_pts_emb.shape[-1])
+            rays_pts_emb_dynamic = torch.cat([rays_pts_emb_dynamic, rays_pts_emb[group_nums*4:]], dim=0)
+            scales_emb_dynamic = scales_emb[:group_nums*4].reshape(group_nums, 4, -1)[group_static_mask_view==0].reshape(-1, scales_emb.shape[-1])
+            scales_emb_dynamic = torch.cat([scales_emb_dynamic, scales_emb[group_nums*4:]], dim=0)
+            rotations_emb_dynamic = rotations_emb[:group_nums*4].reshape(group_nums, 4, -1)[group_static_mask_view==0].reshape(-1, rotations_emb.shape[-1])
+            rotations_emb_dynamic = torch.cat([rotations_emb_dynamic, rotations_emb[group_nums*4:]], dim=0)
+            time_emb_dynamic = time_emb[:group_nums*4].reshape(group_nums, 4, -1)[group_static_mask_view==0].reshape(-1, time_emb.shape[-1])
+            time_emb_dynamic = torch.cat([time_emb_dynamic, time_emb[group_nums*4:]], dim=0)
         else:
             rays_pts_emb_dynamic = rays_pts_emb
             scales_emb_dynamic = scales_emb
@@ -135,6 +143,10 @@ class Deformation(nn.Module):
         time2_1 = get_time()
         print("hexplane time: ",time2_1-time2)
         
+        group_indices = torch.arange(group_nums).unsqueeze(1) * 4 + torch.arange(4)   # [num_groups, 4]
+        group_indices = group_indices.to(group_static_mask_view.device)
+        dynamic_point_indices = group_indices[~group_static_mask_view].reshape(-1)  # [num_common_points]
+        
         torch.cuda.synchronize()
         time3 = get_time()
         hidden = self.feature_out(hidden)  
@@ -149,7 +161,9 @@ class Deformation(nn.Module):
             pts = rays_pts_emb[:,:3]
         else:
             if key_frame_flag != True:
-                dx[static_mask_view==0] = self.pos_deform(hidden)
+                dynamic_dx = self.pos_deform(hidden)
+                dx[dynamic_point_indices] = dynamic_dx[:dynamic_group_nums * 4]
+                dx[group_nums*4:] = dynamic_dx[dynamic_group_nums * 4:]
             else:
                 dx = self.pos_deform(hidden)
             # pts = torch.zeros_like(rays_pts_emb[:,:3])
@@ -159,7 +173,10 @@ class Deformation(nn.Module):
             scales = scales_emb[:,:3]
         else:
             if key_frame_flag != True:
-                ds[static_mask_view==0] = self.scales_deform(hidden)
+                # ds[static_mask_view==0] = self.scales_deform(hidden)
+                dynamic_ds = self.scales_deform(hidden)
+                ds[dynamic_point_indices] = dynamic_ds[:dynamic_group_nums * 4]
+                ds[group_nums*4:] = dynamic_ds[dynamic_group_nums * 4:]
             else:
                 ds = self.scales_deform(hidden)
             # scales = torch.zeros_like(scales_emb[:,:3])
@@ -169,7 +186,10 @@ class Deformation(nn.Module):
             rotations = rotations_emb[:,:4]
         else:
             if key_frame_flag != True:
-                dr[static_mask_view==0] = self.rotations_deform(hidden)
+                # dr[static_mask_view==0] = self.rotations_deform(hidden)
+                dynamic_dr = self.rotations_deform(hidden)
+                dr[dynamic_point_indices] = dynamic_dr[:dynamic_group_nums * 4]
+                dr[group_nums*4:] = dynamic_dr[dynamic_group_nums * 4:]
             else:
                 dr = self.rotations_deform(hidden)
             # rotations = torch.zeros_like(rotations_emb[:,:4])
@@ -234,8 +254,8 @@ class deform_network(nn.Module):
         self.apply(initialize_weights)
         # print(self)
 
-    def forward(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
-        return self.forward_dynamic(point, scales, rotations, opacity, shs, times_sel, frame_id, static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias)
+    def forward(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
+        return self.forward_dynamic(point, scales, rotations, opacity, shs, times_sel, frame_id, group_static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias)
     @property
     def get_aabb(self):
         
@@ -247,7 +267,7 @@ class deform_network(nn.Module):
     def forward_static(self, points):
         points = self.deformation_net(points)
         return points
-    def forward_dynamic(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
+    def forward_dynamic(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
         # times_emb = poc_fre(times_sel, self.time_poc)
         point_emb = poc_fre(point,self.pos_poc)
         scales_emb = poc_fre(scales,self.rotation_scaling_poc)
@@ -261,7 +281,7 @@ class deform_network(nn.Module):
                                                 shs,
                                                 None,
                                                 times_sel, 
-                                                frame_id, static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias)
+                                                frame_id, group_static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias)
         return means3D, scales, rotations, opacity, shs, cur_dx, cur_ds, cur_dr
     def get_mlp_parameters(self):
         return self.deformation_net.get_mlp_parameters() + list(self.timenet.parameters())

@@ -70,6 +70,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     gt_list = []
     render_list = []
     point_nums = gaussians._xyz.shape[0]
+    group_nums = point_nums // 4 # ignore last
     print("point nums:", point_nums)
     total_time = 0
     cur_time = 0.0 # time_stampe
@@ -83,6 +84,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     cur_scale_bias = torch.zeros(point_nums, 3, device="cpu")
     cur_rot_bias = torch.zeros(point_nums, 4, device="cpu")
     static_mask = torch.zeros(point_nums, 1, device="cpu") # 1 for static, 0 for non-static
+    group_static_mask = torch.zeros(group_nums, 1, device="cpu") # 1 for static, 0 for non-static
     ref_scale = gaussians._scaling.to("cpu")
     ref_rot = gaussians._rotation.to("cpu")
     print("ref_scale:", ref_scale.shape)
@@ -96,6 +98,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         if (idx%3 == 0):
             ### full dynamic
             static_mask = torch.zeros(point_nums, 1, device="cpu")
+        group_static_mask = static_mask[:group_nums*4].view(group_nums, 4).min(dim=1).values
         # else:
             # # interp
             # time_next = view.time.to("cpu")
@@ -104,7 +107,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         print(f">>>>>>Begin frame-{idx} rendering")
         torch.cuda.synchronize()
         time_sub_1 = time()
-        render_pkg = render(view, gaussians, pipeline, background,cam_type=cam_type, frame_id=idx, static_mask=static_mask, ref_pos_bias=cur_pos_bias.cuda(), ref_scale_bias=cur_scale_bias.cuda(), ref_rot_bias=cur_rot_bias.cuda())
+        render_pkg = render(view, gaussians, pipeline, background,cam_type=cam_type, frame_id=idx, group_static_mask=group_static_mask, ref_pos_bias=cur_pos_bias.cuda(), ref_scale_bias=cur_scale_bias.cuda(), ref_rot_bias=cur_rot_bias.cuda())
         torch.cuda.synchronize()
         time_sub_2 = time()
         print(f">>>>>> End frame-{idx} rendering, render time:{time_sub_2-time_sub_1}")

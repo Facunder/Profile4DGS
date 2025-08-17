@@ -17,7 +17,7 @@ from utils.sh_utils import eval_sh
 from time import time as get_time
 from torch.profiler import profile, ProfilerActivity, record_function
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None, stage="fine", cam_type=None, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None, stage="fine", cam_type=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
     """
     Render the scene. 
     
@@ -25,8 +25,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     """
     
     # for inertia test
-    if (static_mask is None):
-        static_mask = torch.zeros(pc.get_xyz.shape[0], 1, device="cpu")
+    if (group_static_mask is None):
+        group_static_mask = torch.zeros((pc.get_xyz.shape[0]//4), 1, device="cpu")
         ref_pos_bias = torch.zeros(pc.get_xyz.shape[0], 3, device="cpu")
         ref_scale_bias = torch.zeros(pc.get_xyz.shape[0], 3, device="cpu")
         ref_rot_bias = torch.zeros(pc.get_xyz.shape[0], 4, device="cpu")
@@ -101,7 +101,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         means3D_final, scales_final, rotations_final, opacity_final, shs_final, pos_bias, scale_bias, rot_bias = pc._deformation(means3D, scales, 
                                                                 rotations, opacity, shs,
                                                                 time, frame_id=frame_id,
-                                                                static_mask=static_mask, 
+                                                                group_static_mask=group_static_mask, 
                                                                 ref_pos_bias=ref_pos_bias,
                                                                 ref_scale_bias=ref_scale_bias,
                                                                 ref_rot_bias=ref_rot_bias)
