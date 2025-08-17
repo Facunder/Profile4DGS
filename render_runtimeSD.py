@@ -152,9 +152,9 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             # print("mean grad pos bias:", mean_relative_pos_bias.shape)
             # print(static_mask.shape)
             # static_mask = torch.where(mean_relative_pos_bias < 0.005, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
-            static_mask = torch.where((norm_pos_change < 0.001) & (relative_scale_change < 0.001) & (rot_qua_change < 0.1), torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
-            pos_static = torch.where(norm_pos_change < 0.001, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
-            scale_static = torch.where(relative_scale_change < 0.001, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
+            static_mask = torch.where((norm_pos_change < 0.0005) & (relative_scale_change < 0.0005) & (rot_qua_change < 0.1), torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
+            pos_static = torch.where(norm_pos_change < 0.0005, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
+            scale_static = torch.where(relative_scale_change < 0.0005, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
             rot_static = torch.where(rot_qua_change < 0.1, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
             # print(static_mask.shape)
             static_count = static_mask.sum().item()
@@ -197,7 +197,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree, hyperparam)
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, resolution_scales=[1.0], load_coarse=False, rigidity_ply=True)
         cam_type=scene.dataset_type
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")

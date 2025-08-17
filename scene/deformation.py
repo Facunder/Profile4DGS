@@ -107,7 +107,7 @@ class Deformation(nn.Module):
         point_nums = rays_pts_emb.shape[0]
         group_nums = point_nums // 4
         dynamic_group_nums = int(group_nums - group_static_mask.sum().item())
-        print(f"dynamic cluster: {dynamic_group_nums}/{group_nums}")
+        print(f"Dynamic Cluster: {dynamic_group_nums}/{group_nums}")
         torch.cuda.synchronize()
         time1 = get_time()
         dx = torch.zeros_like(rays_pts_emb[:,:3])
@@ -143,13 +143,38 @@ class Deformation(nn.Module):
         time2_1 = get_time()
         print("hexplane time: ",time2_1-time2)
         
-        group_indices = torch.arange(group_nums).unsqueeze(1) * 4 + torch.arange(4)   # [num_groups, 4]
+        dynamic_hidden_grouped = hidden[:dynamic_group_nums*4].view(dynamic_group_nums, 4, hidden.shape[1])
+        first_row = dynamic_hidden_grouped[:, 0:1, :]  # (dynamic_group_nums, 1, 64)
+        others = dynamic_hidden_grouped[:, 1:, :]      # (dynamic_group_nums, 3, 64)
+        mse = ((others - first_row) ** 2).mean(dim=2)  # (dynamic_group_nums, 3)
+        rigidity_mask = (mse < 0.0005).all(dim=1)  # (dynamic_group_nums,)
+        rigidity_cluster_num = rigidity_mask.sum()
+        non_rigidity_cluster_num = dynamic_group_nums - rigidity_cluster_num
+        print(f"Rigidity Dynamic Cluster: {rigidity_cluster_num}/{dynamic_group_nums}")
+        ancher_dynamic_hidden = dynamic_hidden_grouped[rigidity_mask, 0, :]
+        common_dynamic_hidden = dynamic_hidden_grouped[~rigidity_mask].reshape(-1, hidden.shape[1])
+        common_dynamic_hidden = torch.cat([common_dynamic_hidden, hidden[dynamic_group_nums*4:]], dim=0)
+
+        # in all clusters
+        group_indices = torch.arange(group_nums).unsqueeze(1) * 4 + torch.arange(4)   # [group_nums, 4]
         group_indices = group_indices.to(group_static_mask_view.device)
         dynamic_point_indices = group_indices[~group_static_mask_view].reshape(-1)  # [num_common_points]
+        # in dynamic clusters
+        dynamic_dx = torch.zeros_like(rays_pts_emb_dynamic[:,:3])
+        dynamic_ds = torch.zeros_like(scales_emb_dynamic[:,:3])
+        dynamic_dr = torch.zeros_like(rotations_emb_dynamic[:,:4])
+        dynamic_group_indices = torch.arange(dynamic_group_nums).unsqueeze(1) * 4 + torch.arange(4)   # [num_dynamic_groups, 4]
+        dynamic_group_indices = dynamic_group_indices.to(rigidity_mask.device)
+        common_dynamic_point_indices = dynamic_group_indices[~rigidity_mask].reshape(-1)  # [num_common_points]
+        rigidity_dynamic_point_indices = dynamic_group_indices[rigidity_mask].reshape(-1)  # [num_rigidity_points]
         
         torch.cuda.synchronize()
         time3 = get_time()
-        hidden = self.feature_out(hidden)  
+        # hidden = self.feature_out(hidden)  
+        ancher_dynamic_hidden = self.feature_out(ancher_dynamic_hidden)
+        common_dynamic_hidden = self.feature_out(common_dynamic_hidden)
+        
+        # No Use
         if self.args.static_mlp:
             mask = self.static_mlp(hidden)
         elif self.args.empty_voxel:
@@ -157,41 +182,63 @@ class Deformation(nn.Module):
         else:
             mask = torch.ones_like(opacity_emb[:,0]).unsqueeze(-1)
         # breakpoint()
+        
         if self.args.no_dx:
             pts = rays_pts_emb[:,:3]
         else:
+            ancher_dynamic_dx = self.pos_deform(ancher_dynamic_hidden)
+            common_dynamic_dx = self.pos_deform(common_dynamic_hidden)
+            print(ancher_dynamic_dx.shape)
+            print(common_dynamic_dx.shape)
+            print(rigidity_dynamic_point_indices.shape)
+            print(common_dynamic_point_indices.shape)
+            dynamic_dx[rigidity_dynamic_point_indices] = ancher_dynamic_dx.repeat_interleave(4, dim=0)
+            dynamic_dx[common_dynamic_point_indices] = common_dynamic_dx[:non_rigidity_cluster_num*4]
+            dynamic_dx[dynamic_group_nums * 4:] = common_dynamic_dx[non_rigidity_cluster_num * 4:]
             if key_frame_flag != True:
-                dynamic_dx = self.pos_deform(hidden)
                 dx[dynamic_point_indices] = dynamic_dx[:dynamic_group_nums * 4]
                 dx[group_nums*4:] = dynamic_dx[dynamic_group_nums * 4:]
             else:
-                dx = self.pos_deform(hidden)
+                # dx = self.pos_deform(hidden)
+                dx = dynamic_dx
             # pts = torch.zeros_like(rays_pts_emb[:,:3])
             pts = rays_pts_emb[:,:3]*mask + dx
             
         if self.args.no_ds :
             scales = scales_emb[:,:3]
         else:
+            ancher_dynamic_ds = self.scales_deform(ancher_dynamic_hidden)
+            common_dynamic_ds = self.scales_deform(common_dynamic_hidden)
+            dynamic_ds[rigidity_dynamic_point_indices] = ancher_dynamic_ds.repeat_interleave(4, dim=0)
+            dynamic_ds[common_dynamic_point_indices] = common_dynamic_ds[:non_rigidity_cluster_num*4]
+            dynamic_ds[dynamic_group_nums * 4:] = common_dynamic_ds[non_rigidity_cluster_num * 4:]
             if key_frame_flag != True:
                 # ds[static_mask_view==0] = self.scales_deform(hidden)
-                dynamic_ds = self.scales_deform(hidden)
+                # dynamic_ds = self.scales_deform(hidden)
                 ds[dynamic_point_indices] = dynamic_ds[:dynamic_group_nums * 4]
                 ds[group_nums*4:] = dynamic_ds[dynamic_group_nums * 4:]
             else:
-                ds = self.scales_deform(hidden)
+                # ds = self.scales_deform(hidden)
+                ds = dynamic_ds
             # scales = torch.zeros_like(scales_emb[:,:3])
             scales = scales_emb[:,:3]*mask + ds
             
         if self.args.no_dr :
             rotations = rotations_emb[:,:4]
         else:
+            ancher_dynamic_dr = self.rotations_deform(ancher_dynamic_hidden)
+            common_dynamic_dr = self.rotations_deform(common_dynamic_hidden)
+            dynamic_dr[rigidity_dynamic_point_indices] = ancher_dynamic_dr.repeat_interleave(4, dim=0)
+            dynamic_dr[common_dynamic_point_indices] = common_dynamic_dr[:non_rigidity_cluster_num*4]
+            dynamic_dr[dynamic_group_nums * 4:] = common_dynamic_dr[non_rigidity_cluster_num * 4:]
             if key_frame_flag != True:
                 # dr[static_mask_view==0] = self.rotations_deform(hidden)
-                dynamic_dr = self.rotations_deform(hidden)
+                # dynamic_dr = self.rotations_deform(hidden)
                 dr[dynamic_point_indices] = dynamic_dr[:dynamic_group_nums * 4]
                 dr[group_nums*4:] = dynamic_dr[dynamic_group_nums * 4:]
             else:
-                dr = self.rotations_deform(hidden)
+                # dr = self.rotations_deform(hidden)
+                dr = dynamic_dr
             # rotations = torch.zeros_like(rotations_emb[:,:4])
             if self.args.apply_rotation:
                 rotations = batch_quaternion_multiply(rotations_emb, dr)
