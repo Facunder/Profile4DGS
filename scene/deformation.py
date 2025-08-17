@@ -147,7 +147,7 @@ class Deformation(nn.Module):
         first_row = dynamic_hidden_grouped[:, 0:1, :]  # (dynamic_group_nums, 1, 64)
         others = dynamic_hidden_grouped[:, 1:, :]      # (dynamic_group_nums, 3, 64)
         mse = ((others - first_row) ** 2).mean(dim=2)  # (dynamic_group_nums, 3)
-        rigidity_mask = (mse < 0.0005).all(dim=1)  # (dynamic_group_nums,)
+        rigidity_mask = (mse < 0.01).all(dim=1)  # (dynamic_group_nums,)
         rigidity_cluster_num = rigidity_mask.sum()
         non_rigidity_cluster_num = dynamic_group_nums - rigidity_cluster_num
         print(f"Rigidity Dynamic Cluster: {rigidity_cluster_num}/{dynamic_group_nums}")
@@ -188,10 +188,6 @@ class Deformation(nn.Module):
         else:
             ancher_dynamic_dx = self.pos_deform(ancher_dynamic_hidden)
             common_dynamic_dx = self.pos_deform(common_dynamic_hidden)
-            print(ancher_dynamic_dx.shape)
-            print(common_dynamic_dx.shape)
-            print(rigidity_dynamic_point_indices.shape)
-            print(common_dynamic_point_indices.shape)
             dynamic_dx[rigidity_dynamic_point_indices] = ancher_dynamic_dx.repeat_interleave(4, dim=0)
             dynamic_dx[common_dynamic_point_indices] = common_dynamic_dx[:non_rigidity_cluster_num*4]
             dynamic_dx[dynamic_group_nums * 4:] = common_dynamic_dx[non_rigidity_cluster_num * 4:]
