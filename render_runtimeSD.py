@@ -61,6 +61,7 @@ def multithread_write(image_list, path):
     
 to8b = lambda x : (255*np.clip(x.cpu().numpy(),0,1)).astype(np.uint8)
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background, cam_type):
+    in_cluster_gauss_nums = 4
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
 
@@ -70,16 +71,17 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     gt_list = []
     render_list = []
     point_nums = gaussians._xyz.shape[0]
-    group_nums = point_nums // 4 # ignore last
+    aabb_bounding = gaussians._deformation.get_aabb
+    bounding_scaler = torch.norm((aabb_bounding[0] - aabb_bounding[1]),p=2)
+    print("bounding_scaler: ", bounding_scaler)
+    group_nums = point_nums // in_cluster_gauss_nums # ignore last
     print("point nums:", point_nums)
     total_time = 0
     cur_time = 0.0 # time_stampe
     pre_pos_bias = torch.zeros(point_nums, 3)
     cur_pos_bias = torch.zeros(point_nums, 3, device="cpu")
     pre_scale_bias = torch.zeros(point_nums, 3)
-    cur_scale_bias = torch.zeros(point_nums, 3, device="cpu")
     pre_rot_bias = torch.zeros(point_nums, 4)
-    cur_rot_bias = torch.zeros(point_nums, 4, device="cpu")
     grid_pos_bias = torch.zeros(point_nums, 3, device="cpu")
     cur_scale_bias = torch.zeros(point_nums, 3, device="cpu")
     cur_rot_bias = torch.zeros(point_nums, 4, device="cpu")
@@ -95,10 +97,15 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         #     time1=time()
         ### log out original/deformated gaussian parameters
         
+        if (((idx+1)%2)==0):
+            continue
+        idx = idx // 2
+        
+        # 
         if (idx%3 == 0):
             ### full dynamic
             static_mask = torch.zeros(point_nums, 1, device="cpu")
-        group_static_mask = static_mask[:group_nums*4].view(group_nums, 4).min(dim=1).values
+        group_static_mask = static_mask[:group_nums*in_cluster_gauss_nums].view(group_nums, in_cluster_gauss_nums).min(dim=1).values
         # else:
             # # interp
             # time_next = view.time.to("cpu")
@@ -107,7 +114,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         print(f">>>>>>Begin frame-{idx} rendering")
         torch.cuda.synchronize()
         time_sub_1 = time()
-        render_pkg = render(view, gaussians, pipeline, background,cam_type=cam_type, frame_id=idx, group_static_mask=group_static_mask, ref_pos_bias=cur_pos_bias.cuda(), ref_scale_bias=cur_scale_bias.cuda(), ref_rot_bias=cur_rot_bias.cuda())
+        render_pkg = render(view, gaussians, pipeline, background,cam_type=cam_type, frame_id=idx, group_static_mask=group_static_mask, ref_pos_bias=cur_pos_bias.cuda(), ref_scale_bias=cur_scale_bias.cuda(), ref_rot_bias=cur_rot_bias.cuda(), in_cluster_gauss_nums=in_cluster_gauss_nums)
         torch.cuda.synchronize()
         time_sub_2 = time()
         print(f">>>>>> End frame-{idx} rendering, render time:{time_sub_2-time_sub_1}")
@@ -137,7 +144,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             delta_pos_bias = cur_pos_bias - pre_pos_bias
             delta_scale_bias = cur_scale_bias - pre_scale_bias
             delta_rot_bias = cur_rot_bias - pre_rot_bias
-            grid_pos_bias = delta_pos_bias / delta_time  
+            # grid_pos_bias = delta_pos_bias / delta_time  
             abs_pre_pos_bias = torch.abs(pre_pos_bias)
             abs_pre_scale_bias = torch.abs(pre_scale_bias)
             abs_pre_rot_bias = torch.abs(pre_rot_bias)
@@ -145,17 +152,17 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             # relative_scale_bias = torch.abs(delta_scale_bias) / abs_pre_scale_bias
             # relative_rot_bias = torch.abs(delta_rot_bias) / abs_pre_rot_bias
             # mean_relative_pos_bias = torch.mean(relative_pos_bias, dim=1).unsqueeze(1)
-            norm_pos_change = (torch.norm(delta_pos_bias, p=2, dim=1).unsqueeze(1))
+            norm_pos_change = (torch.norm(delta_pos_bias, p=2, dim=1).unsqueeze(1)) / bounding_scaler.to("cpu")
             relative_scale_change = (torch.norm(delta_scale_bias/ref_scale, p=2, dim=1).unsqueeze(1))
             rot_qua_change = torch.sqrt(8*((1 - torch.sum(cur_rot * pre_rot, dim=1)/(torch.norm(cur_rot, p=2, dim=1)*torch.norm(pre_rot, p=2, dim=1))))).unsqueeze(1)
             
             # print("mean grad pos bias:", mean_relative_pos_bias.shape)
             # print(static_mask.shape)
             # static_mask = torch.where(mean_relative_pos_bias < 0.005, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
-            static_mask = torch.where((norm_pos_change < 0.001) & (relative_scale_change < 0.001) & (rot_qua_change < 0.1), torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
-            pos_static = torch.where(norm_pos_change < 0.001, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
-            scale_static = torch.where(relative_scale_change < 0.001, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
-            rot_static = torch.where(rot_qua_change < 0.1, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
+            static_mask = torch.where((norm_pos_change < 0.002) & (relative_scale_change < 0.04) & (rot_qua_change < 0.3), torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
+            pos_static = torch.where(norm_pos_change < 0.002, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
+            scale_static = torch.where(relative_scale_change < 0.04, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
+            rot_static = torch.where(rot_qua_change < 0.3, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
             # print(static_mask.shape)
             static_count = static_mask.sum().item()
             pos_static_count = pos_static.sum().item()
@@ -188,12 +195,10 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     # print("FPS:",(len(views)-1)/(time2-time1))
     print("FPS:",(len(views)-1)/total_time)
 
-    multithread_write(gt_list, gts_path)
-
-    multithread_write(render_list, render_path)
-
-    
-    imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=90) # 30 Orig
+    # # speed up test 
+    # multithread_write(gt_list, gts_path)
+    # multithread_write(render_list, render_path)    
+    # imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=90) # 30 Orig
 def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree, hyperparam)

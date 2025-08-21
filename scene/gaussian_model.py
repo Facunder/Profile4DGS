@@ -643,6 +643,31 @@ class GaussianModel:
             for grid_id in time_grids:
                 total += compute_plane_smoothness(grids[grid_id])
         return total
+    def _rigidity_connect(self, selected_time):
+        in_cluster_gauss_nums = 3
+        means3D = self._xyz
+        scales = self._scaling
+        rotations = self._rotation
+        opacity = self._opacity
+        # time =  torch.tensor(0).to("cuda").repeat(means3D.shape[0],1)
+        time = torch.tensor(selected_time).to("cuda").repeat(means3D.shape[0],1)
+        means3D_deform, _, _, _, _, _, _, _ = self._deformation(means3D, scales=scales, rotations=rotations, opacity=opacity, times_sel=time)
+        point_nums = means3D.shape[0]
+        group_nums = point_nums // in_cluster_gauss_nums
+        means3D_orig = means3D[:group_nums * in_cluster_gauss_nums].view(group_nums, in_cluster_gauss_nums, 3)  # [G, in_cluster_gauss_nums, 3]
+        ref_orig = means3D_orig[:, 0:1, :]   # [G, 1, 3]
+        others_orig = means3D_orig[:, 1:, :] # [G, 3, 3]
+        direct_orig = others_orig - ref_orig # [G, 3, 3]
+        means3D_deform = means3D_deform[:group_nums * in_cluster_gauss_nums].view(group_nums, in_cluster_gauss_nums, 3)  # [G, in_cluster_gauss_nums, 3]
+        deform_dist = torch.norm(means3D_deform[:,0:1,:], p=2, dim=2)
+        ref_deform = means3D_deform[:, 0:1, :]   # [G, 1, 3]
+        others_deform = means3D_deform[:, 1:, :] # [G, 3, 3]
+        direct_deform = others_deform - ref_deform # [G, 3, 3]
+        vec_offset = torch.norm(direct_deform - direct_orig, p=2, dim=2)
+        rigid_constrain = deform_dist * vec_offset
+        mean_constrain = rigid_constrain.mean()
+        return mean_constrain
+        
     def _time_regulation(self):
         multi_res_grids = self._deformation.deformation_net.grid.grids
         total = 0
@@ -671,3 +696,8 @@ class GaussianModel:
         return total
     def compute_regulation(self, time_smoothness_weight, l1_time_planes_weight, plane_tv_weight):
         return plane_tv_weight * self._plane_regulation() + time_smoothness_weight * self._time_regulation() + l1_time_planes_weight * self._l1_regulation()
+    def compute_rigidity_connect(self, rigidity_weight, selected_times):
+        rigidity_loss=0.0
+        for selected_time in selected_times:
+            rigidity_loss += self._rigidity_connect(selected_time)
+        return (rigidity_weight * torch.exp(1.0 + (rigidity_loss / len(selected_times))))

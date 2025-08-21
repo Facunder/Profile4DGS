@@ -68,7 +68,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         #     continue
         torch.cuda.synchronize()
         time_sub_1 = time()
-        rendering = render(view, gaussians, pipeline, background,cam_type=cam_type)["render"]
+        rendering = render(view, gaussians, pipeline, background,cam_type=cam_type,in_cluster_gauss_nums=3)["render"]
         torch.cuda.synchronize()
         time_sub_2 = time()
         print(f">>>frame-{idx} render time:{time_sub_2-time_sub_1}")
@@ -97,7 +97,8 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     multithread_write(render_list, render_path)
 
     
-    imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=30)
+    # imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=30)
+    
 def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree, hyperparam)
