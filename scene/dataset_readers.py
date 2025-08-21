@@ -267,6 +267,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
         except:
             fovx = focal2fov(contents['fl_x'],contents['w'])
         frames = contents["frames"]
+        # pre_time = 0.0
         for idx, frame in enumerate(frames):
             cam_name = os.path.join(path, frame["file_path"] + extension)
             time = mapper[frame["time"]]
@@ -290,10 +291,19 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
             fovy = focal2fov(fov2focal(fovx, image.shape[1]), image.shape[2])
             FovY = fovy 
             FovX = fovx
-
+            # interp_frame_num = 15
+            # if idx != 0:
+            #     #interp
+            #     delta_time = time - pre_time
+            #     interp_time_step = delta_time / (interp_frame_num + 1)
+            #     for interp_idx in range(interp_frame_num):
+            #         cam_infos.append(CameraInfo(uid=((idx-1)*(interp_frame_num+1)+interp_idx+1), R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+            #                 image_path=image_path, image_name=image_name, width=image.shape[1], height=image.shape[2],
+            #                 time = time, mask=None))
             cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
                             image_path=image_path, image_name=image_name, width=image.shape[1], height=image.shape[2],
                             time = time, mask=None))
+            # pre_time = time
             
     return cam_infos
 def read_timeline(path):

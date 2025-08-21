@@ -155,7 +155,7 @@ class Deformation(nn.Module):
         first_row = dynamic_hidden_grouped[:, 0:1, :]  # (dynamic_group_nums, 1, M)
         others = dynamic_hidden_grouped[:, 1:, :]      # (dynamic_group_nums, in_cluster_gauss_nums, M)
         mse = ((others - first_row) ** 2).max(dim=2).values # (dynamic_group_nums, in_cluster_gauss_nums) # orig mean(dim=2)
-        rigidity_mask = (mse < 0.1).all(dim=1)  # (dynamic_group_nums,) # orig 0.01
+        rigidity_mask = (mse < 0.0).all(dim=1)  # (dynamic_group_nums,) # orig 0.01
         rigidity_cluster_num = rigidity_mask.sum()
         non_rigidity_cluster_num = dynamic_group_nums - rigidity_cluster_num
         print(f"Rigidity Dynamic Cluster: {rigidity_cluster_num}/{dynamic_group_nums}")
