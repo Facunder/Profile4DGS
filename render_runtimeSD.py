@@ -122,6 +122,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     cur_rot_bias = torch.zeros(point_nums, 4, device="cpu")
     static_mask = torch.zeros(point_nums, 1, device="cpu") # 1 for static, 0 for non-static
     group_static_mask = torch.zeros(group_nums, 1, device="cpu") # 1 for static, 0 for non-static
+    rigidity_mask = torch.zeros(group_nums, dtype=torch.bool, device="cpu") # 1 for static, 0 for non-static
     ref_scale = gaussians._scaling.to("cpu")
     ref_rot = gaussians._rotation.to("cpu")
     print("ref_scale:", ref_scale.shape)
@@ -135,7 +136,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         if (idx%3 == 0):
             ### full dynamic
             static_mask = torch.zeros(point_nums, 1, device="cpu")
-        group_static_mask = static_mask[:group_nums*in_cluster_gauss_nums].view(group_nums, in_cluster_gauss_nums).min(dim=1).values
+            group_static_mask = torch.zeros(group_nums, 1, device="cpu")
+            rigidity_mask = torch.zeros(group_nums, dtype=torch.bool, device="cpu")
+            
+        # group_static_mask = static_mask[:group_nums*in_cluster_gauss_nums].view(group_nums, in_cluster_gauss_nums).min(dim=1).values
+        
         # else:
             # # interp
             # time_next = view.time.to("cpu")
@@ -144,7 +149,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         print(f">>>>>>Begin frame-{idx} rendering, timeStamp: {view.time}")
         torch.cuda.synchronize()
         time_sub_1 = time()
-        render_pkg = render(view, gaussians, pipeline, background,cam_type=cam_type, frame_id=idx, group_static_mask=group_static_mask, ref_pos_bias=cur_pos_bias.cuda(), ref_scale_bias=cur_scale_bias.cuda(), ref_rot_bias=cur_rot_bias.cuda(), in_cluster_gauss_nums=in_cluster_gauss_nums)
+        render_pkg = render(view, gaussians, pipeline, background,cam_type=cam_type, frame_id=idx, group_static_mask=group_static_mask, ref_pos_bias=cur_pos_bias.cuda(), ref_scale_bias=cur_scale_bias.cuda(), ref_rot_bias=cur_rot_bias.cuda(), in_cluster_gauss_nums=in_cluster_gauss_nums, rigidity_mask = rigidity_mask)
         torch.cuda.synchronize()
         time_sub_2 = time()
         print(f">>>>>> End frame-{idx} rendering, render time:{time_sub_2-time_sub_1}")
@@ -200,7 +205,18 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             print("scale static count:", scale_static_count)
             print("rot static count:", rot_static_count)
             print("static count:", static_count)
+            # update static mask
+            group_static_mask = static_mask[:group_nums*in_cluster_gauss_nums].view(group_nums, in_cluster_gauss_nums).min(dim=1).values
+            dynamic_group_nums = int(group_nums - group_static_mask.sum().item())
+            grouped_delta_pos_bias = delta_pos_bias[:group_nums*in_cluster_gauss_nums].view(group_nums, in_cluster_gauss_nums, 3)
+            group_static_mask_view = group_static_mask.view(-1).bool()
+            ancher_pos_bias = grouped_delta_pos_bias[~group_static_mask_view, 0:1, :]
+            other_pos_bias = grouped_delta_pos_bias[~group_static_mask_view, 1:, :]
+            direct_changes = torch.norm(other_pos_bias - ancher_pos_bias, p=2, dim=2).max(dim=1).values
+            rigidity_mask = (direct_changes < 0.0002)
             
+            
+        
         if dataset_name == "dnerf" and idx % (interp_frame_num + 1) != 0:
             continue
         elif (dataset_name == "hypernerf" or dataset_name == "dynerf") and idx % (interp_frame_num + 1) != 0:

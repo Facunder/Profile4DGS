@@ -1,0 +1,104 @@
+(Gaussians4D) root@autodl-container-e4ac4db755-98985c4a:~/4DGaussians# bash run_render.sh 
+mkdir: cannot create directory ‘/root/autodl-tmp/4DGaussiansOutput/dnerf/hook_Vanilla’: File exists
+Rendering progress: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 381/381 [00:05<00:00, 75.69it/s]
+
+Scene: /root/autodl-tmp/4DGaussiansOutput/dnerf/hook_Vanilla
+Method: ours_21000
+Method: ours_22000
+Method: ours_23000
+Method: ours_26000
+Method: ours_20000
+Metric evaluation progress: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:26<00:00,  1.34s/it]
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/hook_Vanilla SSIM :    0.9756328
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/hook_Vanilla PSNR :   32.6300163
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/hook_Vanilla LPIPS-vgg:    0.0275014
+mkdir: cannot create directory ‘/root/autodl-tmp/4DGaussiansOutput/dnerf/bouncingballs_Vanilla’: File exists
+Rendering progress: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 381/381 [00:05<00:00, 75.71it/s]
+
+Scene: /root/autodl-tmp/4DGaussiansOutput/dnerf/bouncingballs_Vanilla
+Method: ours_21000
+Method: ours_22000
+Method: ours_26000
+Method: ours_23000
+Method: ours_20000
+Metric evaluation progress: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:25<00:00,  1.29s/it]
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/bouncingballs_Vanilla SSIM :    0.9940985
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/bouncingballs_Vanilla PSNR :   40.4293213
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/bouncingballs_Vanilla LPIPS-vgg:    0.0157006
+mkdir: cannot create directory ‘/root/autodl-tmp/4DGaussiansOutput/dnerf/trex_Vanilla’: File exists
+Rendering progress: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 381/381 [00:06<00:00, 62.24it/s]
+
+Scene: /root/autodl-tmp/4DGaussiansOutput/dnerf/trex_Vanilla
+Method: ours_21000
+Method: ours_22000
+Method: ours_26000
+Method: ours_23000
+Method: ours_20000
+Metric evaluation progress: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:27<00:00,  1.35s/it]
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/trex_Vanilla SSIM :    0.9846836
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/trex_Vanilla PSNR :   34.0909882
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/trex_Vanilla LPIPS-vgg:    0.0223931
+mkdir: cannot create directory ‘/root/autodl-tmp/4DGaussiansOutput/dnerf/lego_Vanilla’: File exists
+Rendering progress: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 381/381 [00:05<00:00, 66.09it/s]
+
+Scene: /root/autodl-tmp/4DGaussiansOutput/dnerf/lego_Vanilla
+Method: ours_21000
+Method: ours_22000
+Method: ours_23000
+Method: ours_20000
+Metric evaluation progress: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [00:25<00:00,  1.26s/it]
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/lego_Vanilla SSIM :    0.9377084
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/lego_Vanilla PSNR :   25.0476723
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dnerf/lego_Vanilla LPIPS-vgg:    0.0564032
+mkdir: cannot create directory ‘/root/autodl-tmp/4DGaussiansOutput/hypernerf/vrig-chicken_Vanilla’: File exists
+164it [00:00, 68071.83it/s]
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 164/164 [00:04<00:00, 35.28it/s]
+Rendering progress: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 653/653 [00:10<00:00, 63.97it/s]
+
+Scene: /root/autodl-tmp/4DGaussiansOutput/hypernerf/vrig-chicken_Vanilla
+Method: ours_15000
+Method: ours_16000
+Method: ours_14000
+Metric evaluation progress: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 164/164 [03:44<00:00,  1.37s/it]
+Scene:  /root/autodl-tmp/4DGaussiansOutput/hypernerf/vrig-chicken_Vanilla SSIM :    0.8063368
+Scene:  /root/autodl-tmp/4DGaussiansOutput/hypernerf/vrig-chicken_Vanilla PSNR :   28.3605537
+Scene:  /root/autodl-tmp/4DGaussiansOutput/hypernerf/vrig-chicken_Vanilla LPIPS-vgg:    0.2797459
+mkdir: cannot create directory ‘/root/autodl-tmp/4DGaussiansOutput/hypernerf/banana_Vanilla’: File exists
+513it [00:00, 86153.27it/s]
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 513/513 [00:13<00:00, 38.49it/s]
+Rendering progress: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2049/2049 [00:47<00:00, 43.36it/s]
+
+Scene: /root/autodl-tmp/4DGaussiansOutput/hypernerf/banana_Vanilla
+Method: ours_14000
+Metric evaluation progress: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 513/513 [11:10<00:00,  1.31s/it]
+Scene:  /root/autodl-tmp/4DGaussiansOutput/hypernerf/banana_Vanilla SSIM :    0.8514556
+Scene:  /root/autodl-tmp/4DGaussiansOutput/hypernerf/banana_Vanilla PSNR :   27.8859520
+Scene:  /root/autodl-tmp/4DGaussiansOutput/hypernerf/banana_Vanilla LPIPS-vgg:    0.1955054
+mkdir: cannot create directory ‘/root/autodl-tmp/4DGaussiansOutput/dynerf/cut_roasted_beef_Vanilla’: File exists
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 5700/5700 [00:00<00:00, 215721.34it/s]
+300it [00:00, 77782.73it/s]
+Rendering progress: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1197/1197 [00:24<00:00, 47.88it/s]
+
+Scene: /root/autodl-tmp/4DGaussiansOutput/dynerf/cut_roasted_beef_Vanilla
+Method: ours_15000
+Method: ours_16000
+Method: ours_20000
+Method: ours_17000
+Method: ours_14000
+Metric evaluation progress: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [07:06<00:00,  1.42s/it]
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dynerf/cut_roasted_beef_Vanilla SSIM :    0.9208344
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dynerf/cut_roasted_beef_Vanilla PSNR :   30.1533947
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dynerf/cut_roasted_beef_Vanilla LPIPS-vgg:    0.1824737
+mkdir: cannot create directory ‘/root/autodl-tmp/4DGaussiansOutput/dynerf/flame_steak_Vanilla’: File exists
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6000/6000 [00:00<00:00, 211198.87it/s]
+300it [00:00, 76987.96it/s]
+Rendering progress: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1197/1197 [00:25<00:00, 46.12it/s]
+
+Scene: /root/autodl-tmp/4DGaussiansOutput/dynerf/flame_steak_Vanilla
+Method: ours_15000
+Method: ours_16000
+Method: ours_14000
+Metric evaluation progress: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [07:07<00:00,  1.42s/it]
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dynerf/flame_steak_Vanilla SSIM :    0.9388558
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dynerf/flame_steak_Vanilla PSNR :   29.7136650
+Scene:  /root/autodl-tmp/4DGaussiansOutput/dynerf/flame_steak_Vanilla LPIPS-vgg:    0.1511142

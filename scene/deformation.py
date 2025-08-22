@@ -95,17 +95,17 @@ class Deformation(nn.Module):
     @property
     def get_empty_ratio(self):
         return self.ratio
-    def forward(self, rays_pts_emb, scales_emb=None, rotations_emb=None, opacity = None,shs_emb=None, time_feature=None, time_emb=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None, in_cluster_gauss_nums=4):
+    def forward(self, rays_pts_emb, scales_emb=None, rotations_emb=None, opacity = None,shs_emb=None, time_feature=None, time_emb=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None, in_cluster_gauss_nums=4, rigidity_mask=None):
         if time_emb is None:
             return self.forward_static(rays_pts_emb[:,:3])
         else:
-            return self.forward_dynamic(rays_pts_emb, scales_emb, rotations_emb, opacity, shs_emb, time_feature, time_emb, frame_id, group_static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias, in_cluster_gauss_nums)
+            return self.forward_dynamic(rays_pts_emb, scales_emb, rotations_emb, opacity, shs_emb, time_feature, time_emb, frame_id, group_static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias, in_cluster_gauss_nums, rigidity_mask)
 
     def forward_static(self, rays_pts_emb):
         grid_feature = self.grid(rays_pts_emb[:,:3])
         dx = self.static_mlp(grid_feature)
         return rays_pts_emb[:, :3] + dx
-    def forward_dynamic(self,rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None, in_cluster_gauss_nums=4):
+    def forward_dynamic(self,rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None, in_cluster_gauss_nums=4, rigidity_mask=None):
         if frame_id % 3 == 0:
             key_frame_flag = True # orig true
         else:
@@ -152,10 +152,10 @@ class Deformation(nn.Module):
         print("hexplane time: ",time2_1-time2)
         
         dynamic_hidden_grouped = hidden[:dynamic_group_nums*in_cluster_gauss_nums].view(dynamic_group_nums, in_cluster_gauss_nums, hidden.shape[1])
-        first_row = dynamic_hidden_grouped[:, 0:1, :]  # (dynamic_group_nums, 1, M)
-        others = dynamic_hidden_grouped[:, 1:, :]      # (dynamic_group_nums, in_cluster_gauss_nums, M)
-        mse = ((others - first_row) ** 2).max(dim=2).values # (dynamic_group_nums, in_cluster_gauss_nums) # orig mean(dim=2)
-        rigidity_mask = (mse < 0.0).all(dim=1)  # (dynamic_group_nums,) # orig 0.01
+        # first_row = dynamic_hidden_grouped[:, 0:1, :]  # (dynamic_group_nums, 1, M)
+        # others = dynamic_hidden_grouped[:, 1:, :]      # (dynamic_group_nums, in_cluster_gauss_nums, M)
+        # mse = ((others - first_row) ** 2).max(dim=2).values # (dynamic_group_nums, in_cluster_gauss_nums) # orig mean(dim=2)
+        # rigidity_mask = (mse < 0.0).all(dim=1)  # (dynamic_group_nums,) # orig 0.01
         rigidity_cluster_num = rigidity_mask.sum()
         non_rigidity_cluster_num = dynamic_group_nums - rigidity_cluster_num
         print(f"Rigidity Dynamic Cluster: {rigidity_cluster_num}/{dynamic_group_nums}")
@@ -172,6 +172,11 @@ class Deformation(nn.Module):
         dynamic_ds = torch.zeros_like(scales_emb_dynamic[:,:3])
         dynamic_dr = torch.zeros_like(rotations_emb_dynamic[:,:4])
         dynamic_group_indices = torch.arange(dynamic_group_nums).unsqueeze(1) * in_cluster_gauss_nums + torch.arange(in_cluster_gauss_nums)   # [num_dynamic_groups, in_cluster_gauss_nums]
+        ancher_indices_t = torch.arange(dynamic_group_nums).unsqueeze(1) * in_cluster_gauss_nums
+        ancher_indices = ancher_indices_t[rigidity_mask].reshape(-1) # [num_rigidity_points
+        print("INFFFFF", ancher_indices.shape)
+        slaves_indices_t = torch.arange(dynamic_group_nums).unsqueeze(1) * (in_cluster_gauss_nums-1) + torch.arange(in_cluster_gauss_nums-1)
+        slaves_indices = slaves_indices_t[rigidity_mask].reshape(-1)  # [num_rigidity_points
         dynamic_group_indices = dynamic_group_indices.to(rigidity_mask.device)
         common_dynamic_point_indices = dynamic_group_indices[~rigidity_mask].reshape(-1)  # [num_common_points]
         rigidity_dynamic_point_indices = dynamic_group_indices[rigidity_mask].reshape(-1)  # [num_rigidity_points]
@@ -196,7 +201,10 @@ class Deformation(nn.Module):
         else:
             ancher_dynamic_dx = self.pos_deform(ancher_dynamic_hidden)
             common_dynamic_dx = self.pos_deform(common_dynamic_hidden)
-            dynamic_dx[rigidity_dynamic_point_indices] = ancher_dynamic_dx.repeat_interleave(in_cluster_gauss_nums, dim=0)
+            if rigidity_cluster_num != 0:
+                new_delta_dx = ancher_dynamic_dx - ref_pos_bias[ancher_indices]
+                # dynamic_dx[rigidity_dynamic_point_indices] = ancher_dynamic_dx.repeat_interleave(in_cluster_gauss_nums, dim=0)
+                dynamic_dx[rigidity_dynamic_point_indices] = ref_pos_bias[rigidity_dynamic_point_indices] + new_delta_dx.repeat_interleave(in_cluster_gauss_nums, dim=0)
             dynamic_dx[common_dynamic_point_indices] = common_dynamic_dx[:non_rigidity_cluster_num*in_cluster_gauss_nums]
             dynamic_dx[dynamic_group_nums * in_cluster_gauss_nums:] = common_dynamic_dx[non_rigidity_cluster_num * in_cluster_gauss_nums:]
             if key_frame_flag != True:
@@ -213,7 +221,10 @@ class Deformation(nn.Module):
         else:
             ancher_dynamic_ds = self.scales_deform(ancher_dynamic_hidden)
             common_dynamic_ds = self.scales_deform(common_dynamic_hidden)
-            dynamic_ds[rigidity_dynamic_point_indices] = ancher_dynamic_ds.repeat_interleave(in_cluster_gauss_nums, dim=0)
+            if rigidity_cluster_num != 0:
+                new_delta_ds = ancher_dynamic_ds - ref_scale_bias[ancher_indices]
+                # dynamic_ds[rigidity_dynamic_point_indices] = ancher_dynamic_ds.repeat_interleave(in_cluster_gauss_nums, dim=0)
+                dynamic_ds[rigidity_dynamic_point_indices] = ref_scale_bias[rigidity_dynamic_point_indices] + new_delta_ds.repeat_interleave(in_cluster_gauss_nums, dim=0)
             dynamic_ds[common_dynamic_point_indices] = common_dynamic_ds[:non_rigidity_cluster_num*in_cluster_gauss_nums]
             dynamic_ds[dynamic_group_nums * in_cluster_gauss_nums:] = common_dynamic_ds[non_rigidity_cluster_num * in_cluster_gauss_nums:]
             if key_frame_flag != True:
@@ -232,7 +243,10 @@ class Deformation(nn.Module):
         else:
             ancher_dynamic_dr = self.rotations_deform(ancher_dynamic_hidden)
             common_dynamic_dr = self.rotations_deform(common_dynamic_hidden)
-            dynamic_dr[rigidity_dynamic_point_indices] = ancher_dynamic_dr.repeat_interleave(in_cluster_gauss_nums, dim=0)
+            if rigidity_cluster_num != 0:
+                new_delta_dr = ancher_dynamic_dr - ref_rot_bias[ancher_indices]
+                # dynamic_dr[rigidity_dynamic_point_indices] = ancher_dynamic_dr.repeat_interleave(in_cluster_gauss_nums, dim=0)
+                dynamic_dr[rigidity_dynamic_point_indices] = ref_rot_bias[rigidity_dynamic_point_indices] + new_delta_dr.repeat_interleave(in_cluster_gauss_nums, dim=0)
             dynamic_dr[common_dynamic_point_indices] = common_dynamic_dr[:non_rigidity_cluster_num*in_cluster_gauss_nums]
             dynamic_dr[dynamic_group_nums * in_cluster_gauss_nums:] = common_dynamic_dr[non_rigidity_cluster_num * in_cluster_gauss_nums:]
             if key_frame_flag != True:
@@ -305,8 +319,8 @@ class deform_network(nn.Module):
         self.apply(initialize_weights)
         # print(self)
 
-    def forward(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None, in_cluster_gauss_nums=4):
-        return self.forward_dynamic(point, scales, rotations, opacity, shs, times_sel, frame_id, group_static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias, in_cluster_gauss_nums)
+    def forward(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None, in_cluster_gauss_nums=4, rigidity_mask=None):
+        return self.forward_dynamic(point, scales, rotations, opacity, shs, times_sel, frame_id, group_static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias, in_cluster_gauss_nums, rigidity_mask)
     @property
     def get_aabb(self):
         
@@ -318,7 +332,7 @@ class deform_network(nn.Module):
     def forward_static(self, points):
         points = self.deformation_net(points)
         return points
-    def forward_dynamic(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None, in_cluster_gauss_nums=4):
+    def forward_dynamic(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None, in_cluster_gauss_nums=4, rigidity_mask=None):
         # times_emb = poc_fre(times_sel, self.time_poc)
         point_emb = poc_fre(point,self.pos_poc)
         scales_emb = poc_fre(scales,self.rotation_scaling_poc)
@@ -332,7 +346,7 @@ class deform_network(nn.Module):
                                                 shs,
                                                 None,
                                                 times_sel, 
-                                                frame_id, group_static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias, in_cluster_gauss_nums)
+                                                frame_id, group_static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias, in_cluster_gauss_nums, rigidity_mask)
         return means3D, scales, rotations, opacity, shs, cur_dx, cur_ds, cur_dr
     def get_mlp_parameters(self):
         return self.deformation_net.get_mlp_parameters() + list(self.timenet.parameters())

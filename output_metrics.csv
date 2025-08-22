@@ -1,0 +1,4 @@
+Metric,/root/autodl-tmp/4DGaussiansOutput/dnerf/hook_Vanilla,/root/autodl-tmp/4DGaussiansOutput/dnerf/bouncingballs_Vanilla,/root/autodl-tmp/4DGaussiansOutput/dnerf/trex_Vanilla,/root/autodl-tmp/4DGaussiansOutput/dnerf/lego_Vanilla,/root/autodl-tmp/4DGaussiansOutput/hypernerf/vrig-chicken_Vanilla,/root/autodl-tmp/4DGaussiansOutput/hypernerf/banana_Vanilla,/root/autodl-tmp/4DGaussiansOutput/dynerf/cut_roasted_beef_Vanilla
+SSIM,0.9940985,0.9846836,0.9377084,0.8063368,0.8514556,0.9208344,0.9388558
+PSNR,40.4293213,34.0909882,25.0476723,28.3605537,27.8859520,30.1533947,29.7136650
+LPIPS-vgg,0.0275014,0.0157006,0.0223931,0.0564032,0.2797459,0.1955054,0.1824737
