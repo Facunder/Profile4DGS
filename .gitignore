@@ -3,3 +3,4 @@ output/*
 *.sh
 */__pycache__
 */__pycache__/*
+submodules/*/build/
