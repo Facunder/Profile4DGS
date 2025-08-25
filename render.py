@@ -126,6 +126,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--skip_video", action="store_true")
     parser.add_argument("--configs", type=str)
+    parser.add_argument("--dataset_name", type=str, default="default")
     args = get_combined_args(parser)
     print("Rendering " , args.model_path)
     if args.configs:

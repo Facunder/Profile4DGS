@@ -29,7 +29,7 @@ def parse_file(filename):
 
 if __name__ == "__main__":
     # 假设要读取当前目录下的所有 .txt 文件
-    files = glob.glob("/root/autodl-tmp/4DGaussiansOutput/*/*/run_render_ClusterSDMaskOnly.log")
+    files = glob.glob("/root/autodl-tmp/4DGaussiansOutput/*/*/run_render_PosCheckRigidityOnly.log")
 
     for file in files:
         avg_dynamic, avg_rigidity, total_num = parse_file(file)

@@ -131,7 +131,8 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         # if idx == 0:
         #     time1=time()
         ### log out original/deformated gaussian parameters
-         
+        # if idx != 0:
+        #     break
         if (idx%3 == 0):
             ### full dynamic
             static_mask = torch.zeros(point_nums, 1, device="cpu")
