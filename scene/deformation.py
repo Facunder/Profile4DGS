@@ -2,7 +2,7 @@ import functools
 import math
 import os
 import time
-from tkinter import W
+# from tkinter import W
 from time import time as get_time
 import numpy as np
 import torch
@@ -211,9 +211,12 @@ class deform_network(nn.Module):
         return points
     def forward_dynamic(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None):
         # times_emb = poc_fre(times_sel, self.time_poc)
-        point_emb = poc_fre(point,self.pos_poc)
-        scales_emb = poc_fre(scales,self.rotation_scaling_poc)
-        rotations_emb = poc_fre(rotations,self.rotation_scaling_poc)
+        # point_emb = poc_fre(point,self.pos_poc)
+        # scales_emb = poc_fre(scales,self.rotation_scaling_poc)
+        # rotations_emb = poc_fre(rotations,self.rotation_scaling_poc)
+        point_emb = point
+        scales_emb = scales
+        rotations_emb = rotations
         # time_emb = poc_fre(times_sel, self.time_poc)
         # times_feature = self.timenet(time_emb)
         means3D, scales, rotations, opacity, shs = self.deformation_net( point_emb,

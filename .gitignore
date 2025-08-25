@@ -1,3 +1,6 @@
 output/
 output/*
 *.sh
+scene/__pycache__/*
+*/__pycache__/*
+submodules/*/build/*
