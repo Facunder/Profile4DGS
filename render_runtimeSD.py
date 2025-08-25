@@ -15,6 +15,7 @@ import numpy as np
 import torch
 from scene import Scene
 import os
+import sys
 # import shutil
 # import glob
 # import re
@@ -32,7 +33,7 @@ import threading
 import concurrent.futures
 import copy
 
-def insert_interpolated_views(views, N: int):
+def insert_interpolated_views(views, N: int, dataset_name: str):
     """
     在相邻的两个 CameraInfo 之间插入 N 个新元素。
     - 新元素的 time 为线性插值。
@@ -45,7 +46,11 @@ def insert_interpolated_views(views, N: int):
     #     return list(views)
 
     out = []
-    for i in range(len(views) - 1):
+    if dataset_name == "dnerf":
+        start_view_index = 0
+    else:
+        start_view_index = (len(views) - 51)
+    for i in range(start_view_index, len(views) - 1):
         left = views[i]
         right = views[i + 1]
         out.append(left)  # 先放入左端原始元素
@@ -94,7 +99,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         interp_frame_num = 19
     else:
         interp_frame_num = 3
-    views = insert_interpolated_views(views, interp_frame_num)
+    views = insert_interpolated_views(views, interp_frame_num, dataset_name)
     
     in_cluster_gauss_nums = 4
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
@@ -133,6 +138,10 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         ### log out original/deformated gaussian parameters
         # if idx != 0:
         #     break
+
+        if idx == 150:
+            sys.exit()
+
         if (idx%3 == 0):
             ### full dynamic
             static_mask = torch.zeros(point_nums, 1, device="cpu")

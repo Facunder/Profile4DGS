@@ -13,6 +13,7 @@ import numpy as np
 import torch
 from scene import Scene
 import os
+import sys
 import cv2
 from tqdm import tqdm
 from os import makedirs
@@ -29,6 +30,41 @@ import concurrent.futures
 from torch.profiler import profile, ProfilerActivity, schedule
 
 # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
+import copy
+
+def insert_interpolated_views(views, N: int, dataset_name: str):
+    """
+    在相邻的两个 CameraInfo 之间插入 N 个新元素。
+    - 新元素的 time 为线性插值。
+    - 其它属性与右侧原始 CameraInfo 完全相同（复用引用）。
+    - 保留原列表中的所有元素与顺序。
+    """
+    if N < 0:
+        raise ValueError("N 必须为非负整数")
+    # if len(views) <= 1 or N == 0:
+    #     return list(views)
+
+    out = []
+    if dataset_name == "dnerf":
+        start_view_index = 0
+    else:
+        start_view_index = (len(views) - 51)
+    for i in range(start_view_index, len(views) - 1):
+        left = views[i]
+        right = views[i + 1]
+        out.append(left)  # 先放入左端原始元素
+
+        dt = right.time - left.time
+        # 在 (left, right) 之间插入 N 个
+        for k in range(1, N + 1):
+            t = left.time + dt * (k / (N + 1))
+            interp_camera = copy.deepcopy(right)
+            interp_camera.time = t
+            out.append(interp_camera)
+    out.append(views[-1])  # 放入最后一个原始元素
+    return out
+
+
 
 def multithread_write(image_list, path):
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=None)
@@ -48,7 +84,14 @@ def multithread_write(image_list, path):
             write_image(image_list[index], index, path)
     
 to8b = lambda x : (255*np.clip(x.cpu().numpy(),0,1)).astype(np.uint8)
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background, cam_type):
+def render_set(model_path, name, iteration, views, gaussians, pipeline, background, cam_type, dataset_name):
+
+    if dataset_name == "dnerf":
+        interp_frame_num = 19
+    else:
+        interp_frame_num = 3
+    views = insert_interpolated_views(views, interp_frame_num, dataset_name)
+
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
 
@@ -60,18 +103,23 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     # breakpoint()
     print("point nums:",gaussians._xyz.shape[0])
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")): 
+
+        if idx == 150:
+            sys.exit()
+
         if idx == 0:
             time1 = time()
         # breakpoint()
         
         # if ((idx + 1) % 2) == 0: # for two camera hypernerf dataset, only render half
         #     continue
+        print(f">>>>>>Begin frame-{idx} rendering, timeStamp: {view.time}")
         torch.cuda.synchronize()
         time_sub_1 = time()
         rendering = render(view, gaussians, pipeline, background,cam_type=cam_type,in_cluster_gauss_nums=3)["render"]
         torch.cuda.synchronize()
         time_sub_2 = time()
-        print(f">>>frame-{idx} render time:{time_sub_2-time_sub_1}")
+        print(f">>>>>> End frame-{idx} rendering, render time:{time_sub_2-time_sub_1}")
         # torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         render_images.append(to8b(rendering).transpose(1,2,0))
         # print(to8b(rendering).shape)
@@ -91,15 +139,15 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     print("FPS:",(len(views)-1)/(time2-time1))
     # print("writing training images.")
 
-    multithread_write(gt_list, gts_path)
+    # multithread_write(gt_list, gts_path)
     # print("writing rendering images.")
 
-    multithread_write(render_list, render_path)
+    # multithread_write(render_list, render_path)
 
     
     # imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=30)
     
-def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool):
+def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool, dataset_name: str):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree, hyperparam)
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, rigidity_ply=True)
@@ -108,12 +156,12 @@ def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : P
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
-            render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background,cam_type)
+            render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background,cam_type, dataset_name)
 
         if not skip_test:
-            render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,cam_type)
+            render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,cam_type, dataset_name)
         if not skip_video:
-            render_set(dataset.model_path,"video",scene.loaded_iter,scene.getVideoCameras(),gaussians,pipeline,background,cam_type)
+            render_set(dataset.model_path,"video",scene.loaded_iter,scene.getVideoCameras(),gaussians,pipeline,background,cam_type, dataset_name)
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Testing script parameters")
@@ -137,4 +185,4 @@ if __name__ == "__main__":
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    render_sets(model.extract(args), hyperparam.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.skip_video)
+    render_sets(model.extract(args), hyperparam.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.skip_video,  args.dataset_name)

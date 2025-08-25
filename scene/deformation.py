@@ -2,7 +2,7 @@ import functools
 import math
 import os
 import time
-from tkinter import W
+# from tkinter import W
 from time import time as get_time
 import numpy as np
 import torch
