@@ -276,7 +276,7 @@ class Deformation(nn.Module):
         time4 = get_time()
         print("mlp time",time4-time3)
         
-        return pts, scales, rotations, opacity, shs, dx.cpu(), ds.cpu(), dr.cpu()
+        return pts, scales, rotations, opacity, shs, dx, ds, dr
     def get_mlp_parameters(self):
         parameter_list = []
         for name, param in self.named_parameters():
