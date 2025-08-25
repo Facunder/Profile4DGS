@@ -45,7 +45,7 @@ def insert_interpolated_views(views, N: int):
     #     return list(views)
 
     out = []
-    for i in range(len(views) - 1):
+    for i in range(len(views)-1): # for jetson
         left = views[i]
         right = views[i + 1]
         out.append(left)  # 先放入左端原始元素
@@ -90,11 +90,12 @@ def multithread_write(image_list, path):
     
 to8b = lambda x : (255*np.clip(x.cpu().numpy(),0,1)).astype(np.uint8)
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background, cam_type, dataset_name):
-    if dataset_name == "dnerf":
-        interp_frame_num = 19
-    else:
-        interp_frame_num = 3
-    views = insert_interpolated_views(views, interp_frame_num)
+    if name == "test":
+        if dataset_name == "dnerf":
+            interp_frame_num = 19
+        else:
+            interp_frame_num = 3
+        views = insert_interpolated_views(views, interp_frame_num)
     
     in_cluster_gauss_nums = 4
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
@@ -132,6 +133,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         #     time1=time()
         ### log out original/deformated gaussian parameters
          
+        # if idx <= 150: # for jetson
+            # continue
+        if idx == 150: # for jetson
+            break
+         
         if (idx%3 == 0):
             ### full dynamic
             static_mask = torch.zeros(point_nums, 1, device="cpu")
@@ -141,18 +147,20 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             # time_next = view.time.to("cpu")
             # cur_pos_bias_interp = cur_pos_bias + grid_pos_bias * (time_next - cur_time)
             # cur_pos_bias = torch.where((0.005 <= mean_relative_pos_bias) & (mean_relative_pos_bias < 0.02), cur_pos_bias_interp, cur_pos_bias)
-        print(f">>>>>>Begin frame-{idx} rendering, timeStamp: {view.time}")
+        print(f"[INFO] >>>>>>Begin frame-{idx} rendering, timeStamp: {view.time}")
         torch.cuda.synchronize()
         time_sub_1 = time()
         render_pkg = render(view, gaussians, pipeline, background,cam_type=cam_type, frame_id=idx, group_static_mask=group_static_mask, ref_pos_bias=cur_pos_bias.cuda(), ref_scale_bias=cur_scale_bias.cuda(), ref_rot_bias=cur_rot_bias.cuda(), in_cluster_gauss_nums=in_cluster_gauss_nums)
         torch.cuda.synchronize()
         time_sub_2 = time()
-        print(f">>>>>> End frame-{idx} rendering, render time:{time_sub_2-time_sub_1}")
+        print(f"[INFO] >>>>>> End frame-{idx} rendering, render time:{time_sub_2-time_sub_1}")
         rendering = render_pkg['render']
         total_time += (time_sub_2-time_sub_1)
         render_images.append(to8b(rendering).transpose(1,2,0))
         
         # inertia
+        torch.cuda.synchronize()
+        time_sub_3 = time()
         pos_bias = render_pkg["pos_bias"]
         scale_bias = render_pkg["scale_bias"]
         rot_bias = render_pkg["rot_bias"]
@@ -171,22 +179,14 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             delta_time = cur_time - pre_time
             delta_pos_bias = cur_pos_bias - pre_pos_bias
             delta_scale_bias = cur_scale_bias - pre_scale_bias
-            delta_rot_bias = cur_rot_bias - pre_rot_bias
-            # grid_pos_bias = delta_pos_bias / delta_time  
+            delta_rot_bias = cur_rot_bias - pre_rot_bias 
             abs_pre_pos_bias = torch.abs(pre_pos_bias)
             abs_pre_scale_bias = torch.abs(pre_scale_bias)
             abs_pre_rot_bias = torch.abs(pre_rot_bias)
-            # relative_pos_bias = torch.abs(delta_pos_bias) / abs_pre_pos_bias
-            # relative_scale_bias = torch.abs(delta_scale_bias) / abs_pre_scale_bias
-            # relative_rot_bias = torch.abs(delta_rot_bias) / abs_pre_rot_bias
-            # mean_relative_pos_bias = torch.mean(relative_pos_bias, dim=1).unsqueeze(1)
             norm_pos_change = (torch.norm(delta_pos_bias, p=2, dim=1).unsqueeze(1)) / bounding_scaler.to("cpu")
             relative_scale_change = (torch.norm(delta_scale_bias/ref_scale, p=2, dim=1).unsqueeze(1))
             rot_qua_change = torch.sqrt(8*((1 - torch.sum(cur_rot * pre_rot, dim=1)/(torch.norm(cur_rot, p=2, dim=1)*torch.norm(pre_rot, p=2, dim=1))))).unsqueeze(1)
             
-            # print("mean grad pos bias:", mean_relative_pos_bias.shape)
-            # print(static_mask.shape)
-            # static_mask = torch.where(mean_relative_pos_bias < 0.005, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
             static_mask = torch.where((norm_pos_change < 0.002) & (relative_scale_change < 0.04) & (rot_qua_change < 0.2), torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
             pos_static = torch.where(norm_pos_change < 0.002, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
             scale_static = torch.where(relative_scale_change < 0.04, torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
@@ -200,23 +200,24 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             print("scale static count:", scale_static_count)
             print("rot static count:", rot_static_count)
             print("static count:", static_count)
+        torch.cuda.synchronize()
+        time_sub_4 = time()
+        print(f"[INFO] >>>>>> End frame-{idx} inertia, inertia time:{time_sub_4-time_sub_3}")
             
-        if dataset_name == "dnerf" and idx % (interp_frame_num + 1) != 0:
-            continue
-        elif (dataset_name == "hypernerf" or dataset_name == "dynerf") and idx % (interp_frame_num + 1) != 0:
-            continue
-        else:    
-            if name in ["train", "test"]:
-                if cam_type != "PanopticSports":
-                    gt = view.original_image[0:3, :, :]
-                else:
-                    gt  = view['image'].cuda()
-                gt_list.append(gt)
-            render_list.append(rendering)
-            
-            # interp_count = torch.where((0.005 <= mean_relative_pos_bias) & (mean_relative_pos_bias < 0.02), torch.ones_like(static_mask, device="cpu"), torch.zeros_like(static_mask, device="cpu"))
-            # interp_count = interp_count.sum().item()
-            # print("interp count:", interp_count)
+        # # for metrics only
+        # if dataset_name == "dnerf" and idx % (interp_frame_num + 1) != 0:
+        #     continue
+        # elif (dataset_name == "hypernerf" or dataset_name == "dynerf") and idx % (interp_frame_num + 1) != 0:
+        #     continue
+        # else:    
+        #     if name in ["train", "test"]:
+        #         if cam_type != "PanopticSports":
+        #             gt = view.original_image[0:3, :, :]
+        #         else:
+        #             gt  = view['image'].cuda()
+        #         gt_list.append(gt)
+        #     render_list.append(rendering)
+
             
         # if idx == 12 or idx == 13: ## gen GauPRE-sim data
         #     buffer = render_pkg['buffer']
@@ -230,9 +231,9 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     # print("FPS:",(len(views)-1)/(time2-time1))
     print("FPS:",(len(views)-1)/total_time)
 
-    # # speed up test 
-    multithread_write(gt_list, gts_path)
-    multithread_write(render_list, render_path)    
+    # # # speed up test 
+    # multithread_write(gt_list, gts_path)
+    # multithread_write(render_list, render_path)    
     # imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=90) # 30 Orig
 def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool, dataset_name: str):
     with torch.no_grad():

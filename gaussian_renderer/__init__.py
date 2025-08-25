@@ -111,7 +111,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         raise NotImplementedError
     torch.cuda.synchronize()
     time2 = get_time()
-    print("asset value:",time2-time1)
+    print("deform value:",time2-time1)
     torch.cuda.synchronize()
     time_other_1 = get_time()
     scales_final = pc.scaling_activation(scales_final)

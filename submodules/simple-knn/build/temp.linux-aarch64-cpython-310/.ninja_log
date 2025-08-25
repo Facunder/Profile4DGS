@@ -1,0 +1,4 @@
+# ninja log v5
+1	28358	1755532972112656515	/home/profile_workspace/Profile4DGS/submodules/simple-knn/build/temp.linux-aarch64-cpython-310/simple_knn.o	e76c82f0899ad7b8
+1	49426	1755532993153251830	/home/profile_workspace/Profile4DGS/submodules/simple-knn/build/temp.linux-aarch64-cpython-310/ext.o	49fef0f633c11b6c
+1	113830	1755533057522752192	/home/profile_workspace/Profile4DGS/submodules/simple-knn/build/temp.linux-aarch64-cpython-310/spatial.o	ef4ec904c9b9ddd8

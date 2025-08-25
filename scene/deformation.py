@@ -2,7 +2,7 @@ import functools
 import math
 import os
 import time
-from tkinter import W
+# from tkinter import W
 from time import time as get_time
 import numpy as np
 import torch
@@ -134,53 +134,58 @@ class Deformation(nn.Module):
             rotations_emb_dynamic = torch.cat([rotations_emb_dynamic, rotations_emb[group_nums*in_cluster_gauss_nums:]], dim=0)
             time_emb_dynamic = time_emb[:group_nums*in_cluster_gauss_nums].reshape(group_nums, in_cluster_gauss_nums, -1)[group_static_mask_view==0].reshape(-1, time_emb.shape[-1])
             time_emb_dynamic = torch.cat([time_emb_dynamic, time_emb[group_nums*in_cluster_gauss_nums:]], dim=0)
-        else:
-            rays_pts_emb_dynamic = rays_pts_emb
-            scales_emb_dynamic = scales_emb
-            rotations_emb_dynamic = rotations_emb
-            time_emb_dynamic = time_emb
+        # else:
+        #     rays_pts_emb_dynamic = rays_pts_emb
+        #     scales_emb_dynamic = scales_emb
+        #     rotations_emb_dynamic = rotations_emb
+        #     time_emb_dynamic = time_emb
         torch.cuda.synchronize()
         time1_1 = get_time()
         print("mask time: ",time1_1-time1)
         
         torch.cuda.synchronize()
         time2 = get_time()
-        hidden = self.query_time(rays_pts_emb_dynamic, scales_emb_dynamic, rotations_emb_dynamic, time_feature, time_emb_dynamic)
+        if key_frame_flag != True:
+            hidden = self.query_time(rays_pts_emb_dynamic, scales_emb_dynamic, rotations_emb_dynamic, time_feature, time_emb_dynamic)
+        else:
+            hidden = self.query_time(rays_pts_emb, scales_emb, rotations_emb, time_feature, time_emb)
         # print("hidden feature shape: ", hidden.shape)
         torch.cuda.synchronize()
         time2_1 = get_time()
-        print("hexplane time: ",time2_1-time2)
+        print("query time: ",time2_1-time2)
         
-        dynamic_hidden_grouped = hidden[:dynamic_group_nums*in_cluster_gauss_nums].view(dynamic_group_nums, in_cluster_gauss_nums, hidden.shape[1])
-        first_row = dynamic_hidden_grouped[:, 0:1, :]  # (dynamic_group_nums, 1, M)
-        others = dynamic_hidden_grouped[:, 1:, :]      # (dynamic_group_nums, in_cluster_gauss_nums, M)
-        mse = ((others - first_row) ** 2).max(dim=2).values # (dynamic_group_nums, in_cluster_gauss_nums) # orig mean(dim=2)
-        rigidity_mask = (mse < 0.0).all(dim=1)  # (dynamic_group_nums,) # orig 0.01
-        rigidity_cluster_num = rigidity_mask.sum()
-        non_rigidity_cluster_num = dynamic_group_nums - rigidity_cluster_num
-        print(f"Rigidity Dynamic Cluster: {rigidity_cluster_num}/{dynamic_group_nums}")
-        ancher_dynamic_hidden = dynamic_hidden_grouped[rigidity_mask, 0, :]
-        common_dynamic_hidden = dynamic_hidden_grouped[~rigidity_mask].reshape(-1, hidden.shape[1])
-        common_dynamic_hidden = torch.cat([common_dynamic_hidden, hidden[dynamic_group_nums*in_cluster_gauss_nums:]], dim=0)
+        # dynamic_hidden_grouped = hidden[:dynamic_group_nums*in_cluster_gauss_nums].view(dynamic_group_nums, in_cluster_gauss_nums, hidden.shape[1])
+        # first_row = dynamic_hidden_grouped[:, 0:1, :]  # (dynamic_group_nums, 1, M)
+        # others = dynamic_hidden_grouped[:, 1:, :]      # (dynamic_group_nums, in_cluster_gauss_nums, M)
+        # mse = ((others - first_row) ** 2).max(dim=2).values # (dynamic_group_nums, in_cluster_gauss_nums) # orig mean(dim=2)
+        # rigidity_mask = (mse < 0.0).all(dim=1)  # (dynamic_group_nums,) # orig 0.01
+        # rigidity_cluster_num = rigidity_mask.sum()
+        # non_rigidity_cluster_num = dynamic_group_nums - rigidity_cluster_num
+        # print(f"Rigidity Dynamic Cluster: {rigidity_cluster_num}/{dynamic_group_nums}")
+        # ancher_dynamic_hidden = dynamic_hidden_grouped[rigidity_mask, 0, :]
+        # common_dynamic_hidden = dynamic_hidden_grouped[~rigidity_mask].reshape(-1, hidden.shape[1])
+        # common_dynamic_hidden = torch.cat([common_dynamic_hidden, hidden[dynamic_group_nums*in_cluster_gauss_nums:]], dim=0)
 
         # in all clusters
-        group_indices = torch.arange(group_nums).unsqueeze(1) * in_cluster_gauss_nums + torch.arange(in_cluster_gauss_nums)   # [group_nums, in_cluster_gauss_nums]
-        group_indices = group_indices.to(group_static_mask_view.device)
-        dynamic_point_indices = group_indices[~group_static_mask_view].reshape(-1)  # [num_common_points]
-        # in dynamic clusters
-        dynamic_dx = torch.zeros_like(rays_pts_emb_dynamic[:,:3])
-        dynamic_ds = torch.zeros_like(scales_emb_dynamic[:,:3])
-        dynamic_dr = torch.zeros_like(rotations_emb_dynamic[:,:4])
-        dynamic_group_indices = torch.arange(dynamic_group_nums).unsqueeze(1) * in_cluster_gauss_nums + torch.arange(in_cluster_gauss_nums)   # [num_dynamic_groups, in_cluster_gauss_nums]
-        dynamic_group_indices = dynamic_group_indices.to(rigidity_mask.device)
-        common_dynamic_point_indices = dynamic_group_indices[~rigidity_mask].reshape(-1)  # [num_common_points]
-        rigidity_dynamic_point_indices = dynamic_group_indices[rigidity_mask].reshape(-1)  # [num_rigidity_points]
+        if key_frame_flag != True:
+            group_indices = torch.arange(group_nums).unsqueeze(1) * in_cluster_gauss_nums + torch.arange(in_cluster_gauss_nums)   # [group_nums, in_cluster_gauss_nums]
+            group_indices = group_indices.to(group_static_mask_view.device)
+            dynamic_point_indices = group_indices[~group_static_mask_view].reshape(-1)  # [num_common_points]
+        
+        # # in dynamic clusters
+        # dynamic_dx = torch.zeros_like(rays_pts_emb_dynamic[:,:3])
+        # dynamic_ds = torch.zeros_like(scales_emb_dynamic[:,:3])
+        # dynamic_dr = torch.zeros_like(rotations_emb_dynamic[:,:4])
+        # dynamic_group_indices = torch.arange(dynamic_group_nums).unsqueeze(1) * in_cluster_gauss_nums + torch.arange(in_cluster_gauss_nums)   # [num_dynamic_groups, in_cluster_gauss_nums]
+        # dynamic_group_indices = dynamic_group_indices.to(rigidity_mask.device)
+        # common_dynamic_point_indices = dynamic_group_indices[~rigidity_mask].reshape(-1)  # [num_common_points]
+        # rigidity_dynamic_point_indices = dynamic_group_indices[rigidity_mask].reshape(-1)  # [num_rigidity_points]
         
         torch.cuda.synchronize()
         time3 = get_time()
-        # hidden = self.feature_out(hidden)  
-        ancher_dynamic_hidden = self.feature_out(ancher_dynamic_hidden)
-        common_dynamic_hidden = self.feature_out(common_dynamic_hidden)
+        hidden = self.feature_out(hidden)  
+        # ancher_dynamic_hidden = self.feature_out(ancher_dynamic_hidden)
+        # common_dynamic_hidden = self.feature_out(common_dynamic_hidden)
         
         # No Use
         if self.args.static_mlp:
@@ -194,11 +199,12 @@ class Deformation(nn.Module):
         if self.args.no_dx:
             pts = rays_pts_emb[:,:3]
         else:
-            ancher_dynamic_dx = self.pos_deform(ancher_dynamic_hidden)
-            common_dynamic_dx = self.pos_deform(common_dynamic_hidden)
-            dynamic_dx[rigidity_dynamic_point_indices] = ancher_dynamic_dx.repeat_interleave(in_cluster_gauss_nums, dim=0)
-            dynamic_dx[common_dynamic_point_indices] = common_dynamic_dx[:non_rigidity_cluster_num*in_cluster_gauss_nums]
-            dynamic_dx[dynamic_group_nums * in_cluster_gauss_nums:] = common_dynamic_dx[non_rigidity_cluster_num * in_cluster_gauss_nums:]
+            dynamic_dx = self.pos_deform(hidden)
+            # ancher_dynamic_dx = self.pos_deform(ancher_dynamic_hidden)
+            # common_dynamic_dx = self.pos_deform(common_dynamic_hidden)
+            # dynamic_dx[rigidity_dynamic_point_indices] = ancher_dynamic_dx.repeat_interleave(in_cluster_gauss_nums, dim=0)
+            # dynamic_dx[common_dynamic_point_indices] = common_dynamic_dx[:non_rigidity_cluster_num*in_cluster_gauss_nums]
+            # dynamic_dx[dynamic_group_nums * in_cluster_gauss_nums:] = common_dynamic_dx[non_rigidity_cluster_num * in_cluster_gauss_nums:]
             if key_frame_flag != True:
                 dx[dynamic_point_indices] = dynamic_dx[:dynamic_group_nums * in_cluster_gauss_nums]
                 dx[group_nums*in_cluster_gauss_nums:] = dynamic_dx[dynamic_group_nums * in_cluster_gauss_nums:]
@@ -211,11 +217,12 @@ class Deformation(nn.Module):
         if self.args.no_ds :
             scales = scales_emb[:,:3]
         else:
-            ancher_dynamic_ds = self.scales_deform(ancher_dynamic_hidden)
-            common_dynamic_ds = self.scales_deform(common_dynamic_hidden)
-            dynamic_ds[rigidity_dynamic_point_indices] = ancher_dynamic_ds.repeat_interleave(in_cluster_gauss_nums, dim=0)
-            dynamic_ds[common_dynamic_point_indices] = common_dynamic_ds[:non_rigidity_cluster_num*in_cluster_gauss_nums]
-            dynamic_ds[dynamic_group_nums * in_cluster_gauss_nums:] = common_dynamic_ds[non_rigidity_cluster_num * in_cluster_gauss_nums:]
+            dynamic_ds = self.scales_deform(hidden)
+            # ancher_dynamic_ds = self.scales_deform(ancher_dynamic_hidden)
+            # common_dynamic_ds = self.scales_deform(common_dynamic_hidden)
+            # dynamic_ds[rigidity_dynamic_point_indices] = ancher_dynamic_ds.repeat_interleave(in_cluster_gauss_nums, dim=0)
+            # dynamic_ds[common_dynamic_point_indices] = common_dynamic_ds[:non_rigidity_cluster_num*in_cluster_gauss_nums]
+            # dynamic_ds[dynamic_group_nums * in_cluster_gauss_nums:] = common_dynamic_ds[non_rigidity_cluster_num * in_cluster_gauss_nums:]
             if key_frame_flag != True:
                 # ds[static_mask_view==0] = self.scales_deform(hidden)
                 # dynamic_ds = self.scales_deform(hidden)
@@ -230,11 +237,12 @@ class Deformation(nn.Module):
         if self.args.no_dr :
             rotations = rotations_emb[:,:4]
         else:
-            ancher_dynamic_dr = self.rotations_deform(ancher_dynamic_hidden)
-            common_dynamic_dr = self.rotations_deform(common_dynamic_hidden)
-            dynamic_dr[rigidity_dynamic_point_indices] = ancher_dynamic_dr.repeat_interleave(in_cluster_gauss_nums, dim=0)
-            dynamic_dr[common_dynamic_point_indices] = common_dynamic_dr[:non_rigidity_cluster_num*in_cluster_gauss_nums]
-            dynamic_dr[dynamic_group_nums * in_cluster_gauss_nums:] = common_dynamic_dr[non_rigidity_cluster_num * in_cluster_gauss_nums:]
+            dynamic_dr = self.rotations_deform(hidden)
+            # ancher_dynamic_dr = self.rotations_deform(ancher_dynamic_hidden)
+            # common_dynamic_dr = self.rotations_deform(common_dynamic_hidden)
+            # dynamic_dr[rigidity_dynamic_point_indices] = ancher_dynamic_dr.repeat_interleave(in_cluster_gauss_nums, dim=0)
+            # dynamic_dr[common_dynamic_point_indices] = common_dynamic_dr[:non_rigidity_cluster_num*in_cluster_gauss_nums]
+            # dynamic_dr[dynamic_group_nums * in_cluster_gauss_nums:] = common_dynamic_dr[non_rigidity_cluster_num * in_cluster_gauss_nums:]
             if key_frame_flag != True:
                 # dr[static_mask_view==0] = self.rotations_deform(hidden)
                 # dynamic_dr = self.rotations_deform(hidden)
@@ -320,9 +328,19 @@ class deform_network(nn.Module):
         return points
     def forward_dynamic(self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None, frame_id=0, group_static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None, in_cluster_gauss_nums=4):
         # times_emb = poc_fre(times_sel, self.time_poc)
-        point_emb = poc_fre(point,self.pos_poc)
-        scales_emb = poc_fre(scales,self.rotation_scaling_poc)
-        rotations_emb = poc_fre(rotations,self.rotation_scaling_poc)
+        
+        # UseLess
+        # torch.cuda.synchronize()
+        # time1 = get_time()
+        # point_emb = poc_fre(point,self.pos_poc)
+        # scales_emb = poc_fre(scales,self.rotation_scaling_poc)
+        # rotations_emb = poc_fre(rotations,self.rotation_scaling_poc)
+        # torch.cuda.synchronize()
+        # time2 = get_time()
+        # print("poc_fre time: ", time2-time1)
+        point_emb = point
+        scales_emb = scales
+        rotations_emb = rotations
         # time_emb = poc_fre(times_sel, self.time_poc)
         # times_feature = self.timenet(time_emb)
         means3D, scales, rotations, opacity, shs, cur_dx, cur_ds, cur_dr = self.deformation_net( point_emb,
