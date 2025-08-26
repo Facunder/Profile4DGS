@@ -204,11 +204,13 @@ class Deformation(nn.Module):
             # pts = torch.zeros_like(rays_pts_emb[:,:3])
             pts = rays_pts_emb[:,:3]*mask + dx
             
+        # torch.cuda.synchronize()
+        # dynamic_mask_gen_time_1 = get_time()
         dynamic_dx_grouped = dynamic_dx[:dynamic_group_nums*in_cluster_gauss_nums].view(dynamic_group_nums, in_cluster_gauss_nums, -1)
         first_row = dynamic_dx_grouped[:, 0:1, :]  # (dynamic_group_nums, 1, M)
         others = dynamic_dx_grouped[:, 1:, :]      # (dynamic_group_nums, in_cluster_gauss_nums, M)
         normed_mse = ((others - first_row)**2).max(dim=1).values / bounding_scaler_tensor # (dynamic_group_nums, in_cluster_gauss_nums)
-        print("[INFO] bounding_scaler", bounding_scaler_tensor)
+        # print("[INFO] bounding_scaler", bounding_scaler_tensor)
         if key_frame_flag != True:
             rigidity_threshold = 0.0015
         else:
@@ -230,7 +232,9 @@ class Deformation(nn.Module):
         dynamic_group_indices = dynamic_group_indices.to(rigidity_mask.device)
         common_dynamic_point_indices = dynamic_group_indices[~rigidity_mask].reshape(-1)  # [num_common_points]
         rigidity_dynamic_point_indices = dynamic_group_indices[rigidity_mask].reshape(-1)  # [num_rigidity_points]
-            
+        # torch.cuda.synchronize()
+        # dynamic_mask_gen_time_2 = get_time()
+        # print(">>> gen dynamic mask time (in mlp): ", dynamic_mask_gen_time_2 - dynamic_mask_gen_time_1)
             
         if self.args.no_ds :
             scales = scales_emb[:,:3]
@@ -292,7 +296,7 @@ class Deformation(nn.Module):
         time4 = get_time()
         print("mlp time",time4-time3)
         
-        return pts, scales, rotations, opacity, shs, dx.cpu(), ds.cpu(), dr.cpu()
+        return pts, scales, rotations, opacity, shs
     def get_mlp_parameters(self):
         parameter_list = []
         for name, param in self.named_parameters():
@@ -355,7 +359,7 @@ class deform_network(nn.Module):
         
         # time_emb = poc_fre(times_sel, self.time_poc)
         # times_feature = self.timenet(time_emb)
-        means3D, scales, rotations, opacity, shs, cur_dx, cur_ds, cur_dr = self.deformation_net( point_emb,
+        means3D, scales, rotations, opacity, shs = self.deformation_net( point_emb,
                                                 scales_emb,
                                                 rotations_emb,
                                                 opacity,
@@ -363,7 +367,7 @@ class deform_network(nn.Module):
                                                 None,
                                                 times_sel, 
                                                 frame_id, group_static_mask, ref_pos_bias, ref_scale_bias, ref_rot_bias, in_cluster_gauss_nums)
-        return means3D, scales, rotations, opacity, shs, cur_dx, cur_ds, cur_dr
+        return means3D, scales, rotations, opacity, shs
     def get_mlp_parameters(self):
         return self.deformation_net.get_mlp_parameters() + list(self.timenet.parameters())
     def get_grid_parameters(self):

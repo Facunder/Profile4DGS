@@ -98,7 +98,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         # means3D_deform, scales_deform, rotations_deform, opacity_deform = pc._deformation(means3D[deformation_point], scales[deformation_point], 
         #                                                                  rotations[deformation_point], opacity[deformation_point],
         #                                                                  time[deformation_point])
-        means3D_final, scales_final, rotations_final, opacity_final, shs_final, pos_bias, scale_bias, rot_bias = pc._deformation(means3D, scales, 
+        means3D_final, scales_final, rotations_final, opacity_final, shs_final = pc._deformation(means3D, scales, 
                                                                 rotations, opacity, shs,
                                                                 time, frame_id=frame_id,
                                                                 group_static_mask=group_static_mask, 
@@ -161,8 +161,5 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             "visibility_filter" : radii > 0,
             "radii": radii,
             "depth":depth,
-            "pos_bias": pos_bias,
-            "scale_bias": scale_bias,
-            "rot_bias": rot_bias,
             "time_stampe": time[0]}
 
