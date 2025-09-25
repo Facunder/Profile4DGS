@@ -30,6 +30,39 @@ from gaussian_renderer import GaussianModel
 from time import time
 import threading
 import concurrent.futures
+import copy
+
+def insert_interpolated_views(views, N: int, dataset_name: str):
+    """
+    在相邻的两个 CameraInfo 之间插入 N 个新元素。
+    - 新元素的 time 为线性插值。
+    - 其它属性与右侧原始 CameraInfo 完全相同（复用引用）。
+    - 保留原列表中的所有元素与顺序。
+    """
+    if N < 0:
+        raise ValueError("N 必须为非负整数")
+    # if len(views) <= 1 or N == 0:
+    #     return list(views)
+
+    out = []
+    if dataset_name == "dnerf":
+        start_idx = 0
+    else:
+        start_idx = len(views)-51
+    for i in range(start_idx, len(views)-1): # for jetson
+        left = views[i]
+        right = views[i + 1]
+        out.append(left)  # 先放入左端原始元素
+
+        dt = right.time - left.time
+        # 在 (left, right) 之间插入 N 个
+        for k in range(1, N + 1):
+            t = left.time + dt * (k / (N + 1))
+            interp_camera = copy.deepcopy(right)
+            interp_camera.time = t
+            out.append(interp_camera)
+    out.append(views[-1])  # 放入最后一个原始元素
+    return out
 
 def mkdir_p(folder_path):
     # Creates a directory. equivalent to using mkdir -p on the command line
@@ -60,7 +93,14 @@ def multithread_write(image_list, path):
             write_image(image_list[index], index, path)
     
 to8b = lambda x : (255*np.clip(x.cpu().numpy(),0,1)).astype(np.uint8)
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background, cam_type):
+def render_set(model_path, name, iteration, views, gaussians, pipeline, background, cam_type, dataset_name):
+    # if name == "test":
+    #     if dataset_name == "dnerf":
+    #         interp_frame_num = 19
+    #     else:
+    #         interp_frame_num = 3
+    #     views = insert_interpolated_views(views, interp_frame_num, dataset_name)
+
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
 
@@ -93,6 +133,9 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         #     time1=time()
         ### log out original/deformated gaussian parameters
         
+        # if(idx == 30):
+        #     break
+
         if (idx%3 == 0):
             ### full dynamic
             static_mask = torch.zeros(point_nums, 1, device="cpu")
@@ -191,7 +234,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
     
     imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=90) # 30 Orig
-def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool):
+def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool, dataset_name: str):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree, hyperparam)
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
@@ -200,12 +243,12 @@ def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : P
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
-            render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background,cam_type)
+            render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background,cam_type, dataset_name)
 
         if not skip_test:
-            render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,cam_type)
+            render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,cam_type, dataset_name)
         if not skip_video:
-            render_set(dataset.model_path,"video",scene.loaded_iter,scene.getVideoCameras(),gaussians,pipeline,background,cam_type)
+            render_set(dataset.model_path,"video",scene.loaded_iter,scene.getVideoCameras(),gaussians,pipeline,background,cam_type, dataset_name)
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Testing script parameters")
@@ -218,6 +261,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--skip_video", action="store_true")
     parser.add_argument("--configs", type=str)
+    parser.add_argument("--dataset_name", type=str)
     args = get_combined_args(parser)
     inference_quant = False
     print("Rendering " , args.model_path)
@@ -229,4 +273,4 @@ if __name__ == "__main__":
     # Initialize system state (RNG)
     safe_state(args.quiet)
     # if active inference hexplane quant
-    render_sets(model.extract(args), hyperparam.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.skip_video)
+    render_sets(model.extract(args), hyperparam.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.skip_video, args.dataset_name)

@@ -99,11 +99,116 @@ class Deformation(nn.Module):
         grid_feature = self.grid(rays_pts_emb[:,:3])
         dx = self.static_mlp(grid_feature)
         return rays_pts_emb[:, :3] + dx
-    def forward_dynamic(self,rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
+
+    # def forward_dynamic(self,rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
+    #     if frame_id % 3 == 0:
+    #         key_frame_flag = True
+    #     else:
+    #         key_frame_flag = False
+    #     torch.cuda.synchronize()
+    #     time1 = get_time()
+    #     dx = torch.zeros_like(rays_pts_emb[:,:3])
+    #     ds = torch.zeros_like(scales_emb[:,:3])
+    #     dr = torch.zeros_like(rotations_emb[:,:4])
+    #     static_mask_view = static_mask.view(-1).bool()
+    #     if key_frame_flag != True:
+    #         dx = ref_pos_bias
+    #         ds = ref_scale_bias
+    #         dr = ref_rot_bias
+    #         rays_pts_emb_dynamic = rays_pts_emb[static_mask_view==0]
+    #         scales_emb_dynamic = scales_emb[static_mask_view==0]
+    #         rotations_emb_dynamic = rotations_emb[static_mask_view==0]
+    #         time_emb_dynamic = time_emb[static_mask_view==0]
+    #     else:
+    #         rays_pts_emb_dynamic = rays_pts_emb
+    #         scales_emb_dynamic = scales_emb
+    #         rotations_emb_dynamic = rotations_emb
+    #         time_emb_dynamic = time_emb
+    #     torch.cuda.synchronize()
+    #     time1_1 = get_time()
+    #     print("mask time: ",time1_1-time1)
+        
+    #     torch.cuda.synchronize()
+    #     time2 = get_time()
+    #     hidden = self.query_time(rays_pts_emb_dynamic, scales_emb_dynamic, rotations_emb_dynamic, time_feature, time_emb_dynamic)
+    #     # print("hidden feature shape: ", hidden.shape)
+    #     torch.cuda.synchronize()
+    #     time2_1 = get_time()
+    #     print("hexplane time: ",time2_1-time2)
+        
+    #     torch.cuda.synchronize()
+    #     time3 = get_time()
+    #     hidden = self.feature_out(hidden)  
+    #     if self.args.static_mlp:
+    #         mask = self.static_mlp(hidden)
+    #     elif self.args.empty_voxel:
+    #         mask = self.empty_voxel(rays_pts_emb[:,:3])
+    #     else:
+    #         mask = torch.ones_like(opacity_emb[:,0]).unsqueeze(-1)
+    #     # breakpoint()
+    #     if self.args.no_dx:
+    #         pts = rays_pts_emb[:,:3]
+    #     else:
+    #         if key_frame_flag != True:
+    #             dx[static_mask_view==0] = self.pos_deform(hidden)
+    #         else:
+    #             dx = self.pos_deform(hidden)
+    #         # pts = torch.zeros_like(rays_pts_emb[:,:3])
+    #         pts = rays_pts_emb[:,:3]*mask + dx
+        
+    #     if self.args.no_ds :
+    #         scales = scales_emb[:,:3]
+    #     else:
+    #         if key_frame_flag != True:
+    #             ds[static_mask_view==0] = self.scales_deform(hidden)
+    #         else:
+    #             ds = self.scales_deform(hidden)
+    #         # scales = torch.zeros_like(scales_emb[:,:3])
+    #         scales = scales_emb[:,:3]*mask + ds
+            
+    #     if self.args.no_dr :
+    #         rotations = rotations_emb[:,:4]
+    #     else:
+    #         if key_frame_flag != True:
+    #             dr[static_mask_view==0] = self.rotations_deform(hidden)
+    #         else:
+    #             dr = self.rotations_deform(hidden)
+    #         # rotations = torch.zeros_like(rotations_emb[:,:4])
+    #         if self.args.apply_rotation:
+    #             rotations = batch_quaternion_multiply(rotations_emb, dr)
+    #         else:
+    #             rotations = rotations_emb[:,:4] + dr
+
+    #     if self.args.no_do :
+    #         opacity = opacity_emb[:,:1] 
+    #     else:
+    #         do = self.opacity_deform(hidden) 
+          
+    #         opacity = torch.zeros_like(opacity_emb[:,:1])
+    #         opacity = opacity_emb[:,:1]*mask + do
+    #     if self.args.no_dshs:
+    #         shs = shs_emb
+    #     else:
+    #         dshs = self.shs_deform(hidden).reshape([shs_emb.shape[0],16,3])
+
+    #         shs = torch.zeros_like(shs_emb)
+    #         # breakpoint()
+    #         shs = shs_emb*mask.unsqueeze(-1) + dshs
+    #     torch.cuda.synchronize()
+    #     time4 = get_time()
+    #     print("mlp time",time4-time3)
+        
+    #     return pts, scales, rotations, opacity, shs, dx.cpu(), ds.cpu(), dr.cpu()
+
+
+    def forward_dynamic(self, rays_pts_emb, scales_emb, rotations_emb, opacity_emb, shs_emb, time_feature, time_emb, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
         if frame_id % 3 == 0:
             key_frame_flag = True
         else:
             key_frame_flag = False
+
+        key_frame_flag = True # for test
+
         torch.cuda.synchronize()
         time1 = get_time()
         dx = torch.zeros_like(rays_pts_emb[:,:3])
@@ -148,48 +253,104 @@ class Deformation(nn.Module):
         if self.args.no_dx:
             pts = rays_pts_emb[:,:3]
         else:
+            pos_deform = self.pos_deform(hidden)
             if key_frame_flag != True:
-                dx[static_mask_view==0] = self.pos_deform(hidden)
+                dx[static_mask_view==0] = pos_deform
             else:
-                dx = self.pos_deform(hidden)
-            # pts = torch.zeros_like(rays_pts_emb[:,:3])
-            pts = rays_pts_emb[:,:3]*mask + dx
+                dx = pos_deform
             
-        if self.args.no_ds :
+            # ========== 新增的量化和聚类逻辑 ==========
+            # 给定的3维scaler张量 (您需要提供这个张量，这里假设为示例值)
+            # scaler = torch.tensor([1024.0, 1024.0, 1024.0], device=dx.device, dtype=dx.dtype)
+            scaler = self.get_aabb[1] - self.get_aabb[0]
+            scaler = 1024 / scaler
+            # 对dx的每一列进行10bit量化
+            dx_scaled = pos_deform * scaler.unsqueeze(0)  # [N, 3]
+            dx_quantized = torch.clamp(torch.round(dx_scaled), 0, 1023).long()  # 10bit: [0, 1023]
+            
+            # 将三列合并为一个30bit的唯一标识符
+            # 使用位操作将三个10bit值合并为一个30bit值
+            dx_combined = (dx_quantized[:, 0] << 20) + (dx_quantized[:, 1] << 10) + dx_quantized[:, 2]
+            
+            # 聚类：找到所有唯一的30bit值和对应的首次出现索引
+            unique_values, inverse_indices, counts = torch.unique(dx_combined, return_inverse=True, return_counts=True)
+            
+            # 为每个唯一值找到第一个出现的索引
+            first_indices = torch.zeros(len(unique_values), dtype=torch.long, device=dx.device)
+            for i, val in enumerate(unique_values):
+                first_indices[i] = (dx_combined == val).nonzero(as_tuple=True)[0][0]
+            # torch.set_printoptions(profile="full")
+            # print("first_indices shape: ",first_indices.shape)
+            # print("first_indices: ",first_indices)
+            # test_inverse_indices_unique = torch.unique(inverse_indices)
+            # print("test_inverse_indices_unique shape: ",test_inverse_indices_unique.shape)
+            # print("test_inverse_indices_unique: ",test_inverse_indices_unique)
+            # 只选择唯一行对应的hidden进行后续计算
+            hidden_unique = hidden[first_indices]
+            # print("hidden_unique shape: ",hidden_unique.shape)
+            # pts计算保持不变
+            pts = rays_pts_emb[:,:3]*mask + dx
+        
+        # ========== 修改scales计算 ==========
+        if self.args.no_ds:
             scales = scales_emb[:,:3]
         else:
             if key_frame_flag != True:
-                ds[static_mask_view==0] = self.scales_deform(hidden)
+                # 只对唯一行计算ds
+                if not self.args.no_dx:  # 只有在进行了聚类的情况下才优化
+                    ds_unique = self.scales_deform(hidden_unique)
+                    # 将结果复用到所有对应的行
+                    ds_full = ds_unique[inverse_indices]
+                    ds[static_mask_view==0] = ds_full
+                else:
+                    ds[static_mask_view==0] = self.scales_deform(hidden)
             else:
-                ds = self.scales_deform(hidden)
+                if not self.args.no_dx:  # 只有在进行了聚类的情况下才优化
+                    ds_unique = self.scales_deform(hidden_unique)
+                    # 将结果复用到所有对应的行
+                    ds = ds_unique[inverse_indices]
+                else:
+                    ds = self.scales_deform(hidden)
             # scales = torch.zeros_like(scales_emb[:,:3])
             scales = scales_emb[:,:3]*mask + ds
-            
-        if self.args.no_dr :
+        
+        # ========== 修改rotations计算 ==========        
+        if self.args.no_dr:
             rotations = rotations_emb[:,:4]
         else:
             if key_frame_flag != True:
-                dr[static_mask_view==0] = self.rotations_deform(hidden)
+                # 只对唯一行计算dr
+                if not self.args.no_dx:  # 只有在进行了聚类的情况下才优化
+                    dr_unique = self.rotations_deform(hidden_unique)
+                    # 将结果复用到所有对应的行
+                    dr_full = dr_unique[inverse_indices]
+                    dr[static_mask_view==0] = dr_full
+                else:
+                    dr[static_mask_view==0] = self.rotations_deform(hidden)
             else:
-                dr = self.rotations_deform(hidden)
+                if not self.args.no_dx:  # 只有在进行了聚类的情况下才优化
+                    dr_unique = self.rotations_deform(hidden_unique)
+                    # 将结果复用到所有对应的行
+                    dr = dr_unique[inverse_indices]
+                else:
+                    dr = self.rotations_deform(hidden)
             # rotations = torch.zeros_like(rotations_emb[:,:4])
             if self.args.apply_rotation:
                 rotations = batch_quaternion_multiply(rotations_emb, dr)
             else:
                 rotations = rotations_emb[:,:4] + dr
 
-        if self.args.no_do :
+        # opacity和shs的计算保持不变
+        if self.args.no_do:
             opacity = opacity_emb[:,:1] 
         else:
             do = self.opacity_deform(hidden) 
-          
             opacity = torch.zeros_like(opacity_emb[:,:1])
             opacity = opacity_emb[:,:1]*mask + do
         if self.args.no_dshs:
             shs = shs_emb
         else:
             dshs = self.shs_deform(hidden).reshape([shs_emb.shape[0],16,3])
-
             shs = torch.zeros_like(shs_emb)
             # breakpoint()
             shs = shs_emb*mask.unsqueeze(-1) + dshs
@@ -198,6 +359,7 @@ class Deformation(nn.Module):
         print("mlp time",time4-time3)
         
         return pts, scales, rotations, opacity, shs, dx.cpu(), ds.cpu(), dr.cpu()
+
     def get_mlp_parameters(self):
         parameter_list = []
         for name, param in self.named_parameters():

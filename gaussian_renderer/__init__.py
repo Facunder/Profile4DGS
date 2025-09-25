@@ -108,10 +108,10 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             
     else:
         raise NotImplementedError
-    torch.cuda.synchronize()
+    # torch.cuda.synchronize()
     time2 = get_time()
     print("asset value:",time2-time1)
-    torch.cuda.synchronize()
+    # torch.cuda.synchronize()
     time_other_1 = get_time()
     scales_final = pc.scaling_activation(scales_final)
     rotations_final = pc.rotation_activation(rotations_final)
@@ -133,11 +133,11 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             # shs = 
     else:
         colors_precomp = override_color
-    torch.cuda.synchronize()
+    # torch.cuda.synchronize()
     time_other_2 = get_time()
     print("other:",time_other_2-time_other_1)
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    torch.cuda.synchronize()
+    # torch.cuda.synchronize()
     time3 = get_time()
     rendered_image, radii, depth = rasterizer(
         means3D = means3D_final,
@@ -148,7 +148,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         scales = scales_final,
         rotations = rotations_final,
         cov3D_precomp = cov3D_precomp)
-    torch.cuda.synchronize()
+    # torch.cuda.synchronize()
     time4 = get_time()
     print("rasterization:",time4-time3)
 
