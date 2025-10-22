@@ -671,3 +671,14 @@ class GaussianModel:
         return total
     def compute_regulation(self, time_smoothness_weight, l1_time_planes_weight, plane_tv_weight):
         return plane_tv_weight * self._plane_regulation() + time_smoothness_weight * self._time_regulation() + l1_time_planes_weight * self._l1_regulation()
+
+    def compute_scale_punishment(self):
+        # print("scale shape: ", self._scaling.shape)
+        # torch.set_printoptions(profile="full") # print all elements
+        # print("scale: ", self._scaling)
+        # print("scale punishment: ", self._scaling[1000])
+        big_scale = torch.where(self._scaling ** 2 > 30.0, self._scaling ** 2 - 30.0, 0.0)
+        print("opacity", self._opacity.mean())
+        significant_factor = -1.0 * self._opacity * big_scale
+        point_num = significant_factor.shape[0]
+        return torch.sum(significant_factor) / point_num

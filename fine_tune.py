@@ -224,6 +224,14 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             tv_loss = gaussians.compute_regulation(hyper.time_smoothness_weight, hyper.l1_time_planes, hyper.plane_tv_weight)
             loss += tv_loss
             
+            #################################################################
+            # # Add scale loss
+            # scale_loss = 0.00005 * gaussians.compute_scale_punishment()
+            # print("scale loss: ", scale_loss)
+            # print("loss: ", loss)
+            # loss += scale_loss
+            #################################################################
+
             # rigidity_loss = gaussians.compute_rigidity_connect(0.001, select_time)
             # loss += rigidity_loss
             # print(f"rigidity contrib loss: {rigidity_loss}/{loss}")

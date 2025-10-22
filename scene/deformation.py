@@ -207,7 +207,9 @@ class Deformation(nn.Module):
         else:
             key_frame_flag = False
 
-        key_frame_flag = True # for test
+        # key_frame_flag = True # for test
+        if static_mask.sum() == 0:
+            key_frame_flag = True
 
         torch.cuda.synchronize()
         time1 = get_time()
@@ -262,32 +264,36 @@ class Deformation(nn.Module):
             # ========== 新增的量化和聚类逻辑 ==========
             # 给定的3维scaler张量 (您需要提供这个张量，这里假设为示例值)
             # scaler = torch.tensor([1024.0, 1024.0, 1024.0], device=dx.device, dtype=dx.dtype)
+            if key_frame_flag:
+                quant_bit = 16
+            else:
+                quant_bit = 16 # 14 Orig
             scaler = self.get_aabb[1] - self.get_aabb[0]
-            scaler = 1024 / scaler
-            # 对dx的每一列进行10bit量化
+            scaler = (2**quant_bit) / scaler
+            # 对dx的每一列进行12bit量化
             dx_scaled = pos_deform * scaler.unsqueeze(0)  # [N, 3]
-            dx_quantized = torch.clamp(torch.round(dx_scaled), 0, 1023).long()  # 10bit: [0, 1023]
+            dx_quantized = torch.clamp(torch.round(dx_scaled), 0, (2**quant_bit)-1).long()  # 12bit: [0, 4095]
             
-            # 将三列合并为一个30bit的唯一标识符
-            # 使用位操作将三个10bit值合并为一个30bit值
-            dx_combined = (dx_quantized[:, 0] << 20) + (dx_quantized[:, 1] << 10) + dx_quantized[:, 2]
+            # 将三列合并为一个36bit的唯一标识符
+            # 使用位操作将三个12bit值合并为一个30bit值
+            dx_combined = (dx_quantized[:, 0] << (2*quant_bit)) + (dx_quantized[:, 1] << quant_bit) + dx_quantized[:, 2]
             
-            # 聚类：找到所有唯一的30bit值和对应的首次出现索引
+            # 聚类：找到所有唯一的36bit值和对应的首次出现索引
             unique_values, inverse_indices, counts = torch.unique(dx_combined, return_inverse=True, return_counts=True)
             
-            # 为每个唯一值找到第一个出现的索引
-            first_indices = torch.zeros(len(unique_values), dtype=torch.long, device=dx.device)
-            for i, val in enumerate(unique_values):
-                first_indices[i] = (dx_combined == val).nonzero(as_tuple=True)[0][0]
-            # torch.set_printoptions(profile="full")
-            # print("first_indices shape: ",first_indices.shape)
-            # print("first_indices: ",first_indices)
-            # test_inverse_indices_unique = torch.unique(inverse_indices)
-            # print("test_inverse_indices_unique shape: ",test_inverse_indices_unique.shape)
-            # print("test_inverse_indices_unique: ",test_inverse_indices_unique)
-            # 只选择唯一行对应的hidden进行后续计算
+            # # 为每个唯一值找到第一个出现的索引
+            # first_indices = torch.zeros(len(unique_values), dtype=torch.long, device=dx.device)
+            # for i, val in enumerate(unique_values):
+            #     first_indices[i] = (dx_combined == val).nonzero(as_tuple=True)[0][0]
+            # # 只选择唯一行对应的hidden进行后续计算
+
+            # 找到每个唯一值的首次出现位置
+            first_indices = torch.zeros(len(unique_values), dtype=torch.long, device=dx_combined.device)
+            first_indices[inverse_indices] = torch.arange(len(dx_combined), device=dx_combined.device)
+            first_indices = first_indices[torch.arange(len(unique_values), device=dx_combined.device)]
+
             hidden_unique = hidden[first_indices]
-            # print("hidden_unique shape: ",hidden_unique.shape)
+            print("hidden_unique shape: ",hidden_unique.shape, "total values shape: ",dx_combined.shape)
             # pts计算保持不变
             pts = rays_pts_emb[:,:3]*mask + dx
         
