@@ -17,7 +17,7 @@ from utils.sh_utils import eval_sh
 from time import time as get_time
 from torch.profiler import profile, ProfilerActivity, record_function
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None, stage="fine", cam_type=None, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None, stage="fine", cam_type=None, frame_id=0, static_mask=None, ref_pos_bias=None, ref_scale_bias=None, ref_rot_bias=None, enable_rigid_cluster=False):
     """
     Render the scene. 
     
@@ -104,7 +104,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
                                                                 static_mask=static_mask, 
                                                                 ref_pos_bias=ref_pos_bias,
                                                                 ref_scale_bias=ref_scale_bias,
-                                                                ref_rot_bias=ref_rot_bias)
+                                                                ref_rot_bias=ref_rot_bias,
+                                                                enable_rigid_cluster=enable_rigid_cluster)
             
     else:
         raise NotImplementedError

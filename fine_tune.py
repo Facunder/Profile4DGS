@@ -66,7 +66,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
     ema_loss_for_log = 0.0
     ema_psnr_for_log = 0.0
 
-    fine_tune_iter = 3000
+    fine_tune_iter = 3000 # only for flame_steak, others are 3000
     final_iter = train_iter + fine_tune_iter
     print("final iter: ", final_iter)
     print("first iter: ", first_iter)
@@ -431,7 +431,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[3000,7000,14000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[ 14000, 17000, 20000, 23000, 30_000, 45000, 60000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[ 14000, 16000, 17000, 19000, 20000, 23000, 30_000, 45000, 60000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
